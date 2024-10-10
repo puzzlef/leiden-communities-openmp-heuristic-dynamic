@@ -8,6 +8,7 @@
 #include "Graph.hxx"
 #include "properties.hxx"
 #include "csr.hxx"
+#include "bfs.hxx"
 #ifdef OPENMP
 #include <omp.h>
 #endif
@@ -1256,6 +1257,54 @@ inline void leidenAggregateOmpW(vector<size_t>& yoff, vector<K>& ydeg, vector<K>
   leidenCommunityTotalDegreeOmpW(yoff, x, vcom);
   yoff[C] = exclusiveScanOmpW(yoff.data(), bufs.data(), yoff.data(), C);
   leidenAggregateEdgesOmpW<CHUNK_SIZE>(ydeg, yedg, ywei, vcs, vcout, x, vcom, coff, cedg, yoff);
+}
+#endif
+#pragma endregion
+
+
+
+
+#pragma region SPLIT DISCONNECTED COMMUNITIES
+#ifdef OPENMP
+/**
+ * Split disconnected communities using BFS.
+ * @param vcom label/subcommunity each vertex belongs to (output)
+ * @param cbsy community busy flags (scratch)
+ * @param vis vertex visited flags (scratch)
+ * @param us per-thread start vertices for BFS (scratch)
+ * @param vs per-thread frontier vertices for BFS (scratch)
+ * @param x given graph
+ * @param vdom community each vertex belongs to
+ */
+template <class B, class G, class K>
+inline void splitDisconnectedCommunitiesBfsOmpW(vector<K>& vcom, vector<B>& cbsy, vector<B>& vis, vector<vector<K>*>& us, vector<vector<K>*>& vs, const G& x, const vector<K>& vdom) {
+  size_t S = x.span();
+  // Initialize each vertex to its own label/subcommunity.
+  #pragma omp parallel for schedule(auto)
+  for (K u=0; u<S; ++u) {
+    vcom[u] = u;
+    cbsy[u] = B();
+    vis[u]  = B();
+  }
+  // Perform DFS from an untouched vertex, within each community (each thread picks a community atomically).
+  #pragma omp parallel
+  {
+    int t = omp_get_thread_num();
+    int T = omp_get_num_threads();
+    auto fl = [&](auto u) {
+      if (!x.hasVertex(u) || vis[u]) return;
+      K d = vdom[u], c = vcom[u];
+      if (cbsy[d] || __atomic_exchange_n(&cbsy[d], B(1), __ATOMIC_SEQ_CST)!=B()) return;
+      auto ft = [&](auto v, auto _) { return vdom[v]==d; };
+      auto fp = [&](auto v, auto _) { vcom[v] = c; };
+      (*us[t]).clear(); (*vs[t]).clear(); (*us[t]).push_back(u);
+      bfsVisitedForEachU(vis, *us[t], *vs[t], x, ft, fp);
+      cbsy[d] = B();
+    };
+    K ub = K((double(t)/T) * S);
+    for (K u=ub; u<S; ++u) fl(u);
+    for (K u=0; u<ub; ++u) fl(u);
+  }
 }
 #endif
 #pragma endregion
