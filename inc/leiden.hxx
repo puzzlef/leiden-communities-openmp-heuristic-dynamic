@@ -860,7 +860,7 @@ inline void splitDisconnectedCommunitiesBfsOmpW(vector<K>& vcom, vector<B>& cbsy
  * @param fa is vertex allowed to be updated? (u)
  * @returns leiden result
  */
-template <bool DYNAMIC=false, bool SUBREFINE=false, int CHUNK_SIZE=2048, class G, class FI, class FM, class FA>
+template <bool DYNAMIC=false, int CHUNK_SIZE=2048, class G, class FI, class FM, class FA>
 inline auto leidenInvokeOmp(const G& x, const LeidenOptions& o, FI fi, FM fm, FA fa) {
   using  K = typename G::key_type;
   using  W = LEIDEN_WEIGHT_TYPE;
@@ -889,9 +889,9 @@ inline auto leidenInvokeOmp(const G& x, const LeidenOptions& o, FI fi, FM fm, FA
   if (!DYNAMIC) ucom.resize(S);
   if (!DYNAMIC) utot.resize(S);
   if (!DYNAMIC) ctot.resize(S);
-  if (SUBREFINE) cchg.resize(S);
-  if (SUBREFINE) bufc.resize(S);
-  if (SUBREFINE) dtot.resize(S);
+  if ( DYNAMIC) cchg.resize(S);
+  if ( DYNAMIC) bufc.resize(S);
+  if ( DYNAMIC) dtot.resize(S);
   leidenAllocateHashtablesW(vcs, vcout, S);
   size_t Z = max(size_t(o.aggregationTolerance * X), X);
   size_t Y = max(size_t(o.aggregationTolerance * Z), Z);
@@ -931,16 +931,17 @@ inline auto leidenInvokeOmp(const G& x, const LeidenOptions& o, FI fi, FM fm, FA
         bool isFirst = p==0;
         int m = 0;
         tl += measureDuration([&]() {
-          auto fb = [&](auto c) { if (SUBREFINE) cchg[c] = B(1); };
+          auto fb = [&](auto c) { if (DYNAMIC) cchg[c] = B(1); };  // Track communities that need to be refined
           if (isFirst) m += leidenMoveOmpW(ucom, ctot, vaff, vcs, vcout, x, vcob, utot, M, R, L, fc, fa, fb);
           else         m += leidenMoveOmpW(vcom, ctot, vaff, vcs, vcout, y, vcob, vtot, M, R, L, fc);
         });
         tr += measureDuration([&]() {
-          if (SUBREFINE && isFirst) {
+          // Adjust community IDs.
+          if (DYNAMIC && isFirst) {
             swap(ctot, dtot); swap(ucom, vcob); swap(cchg, vaff);
             leidenSubsetRenameCommunitiesOmpW(ucom, ctot, cchg, bufc, x, vcob, dtot, vaff);
           }
-          auto fr = [&](auto u) { return SUBREFINE? cchg[vcob[u]] : B(1); };
+          auto fr = [&](auto u) { return DYNAMIC? cchg[vcob[u]] : B(1); };
           if (isFirst) copyValuesOmpW(vcob.data(), ucom.data(), x.span());  // swap(vcob, ucom);
           else         copyValuesOmpW(vcob.data(), vcom.data(), y.span());  // swap(vcob, vcom);
           if (isFirst) leidenInitializeOmpW(ucom, ctot, x, utot, fr);
@@ -1037,7 +1038,7 @@ inline auto leidenStaticOmp(const G& x, const LeidenOptions& o={}) {
     fillValueOmpU(vaff, B(1));
   };
   auto fa = [ ](auto u) { return true; };
-  return leidenInvokeOmp<false, false>(x, o, fi, fm, fa);
+  return leidenInvokeOmp<false>(x, o, fi, fm, fa);
 }
 #pragma endregion
 
@@ -1104,7 +1105,7 @@ inline auto leidenNaiveDynamicOmp(const G& y, const vector<tuple<K, K, V>>& dele
     leidenChangedCommunitiesOmpU(cchg, y, vcom, deletions, insertions);
   };
   auto fa = [ ](auto u) { return true; };
-  return leidenInvokeOmp<true, true>(y, o, fi, fm, fa);
+  return leidenInvokeOmp<true>(y, o, fi, fm, fa);
 }
 #pragma endregion
 
@@ -1213,7 +1214,7 @@ inline auto leidenDynamicDeltaScreeningOmp(const G& y, const vector<tuple<K, K, 
     copyValuesOmpW(vaff, vertices);
   };
   auto fa = [&](auto u) { return vertices[u] == B(1); };
-  return leidenInvokeOmp<true, true>(y, o, fi, fm, fa);
+  return leidenInvokeOmp<true>(y, o, fi, fm, fa);
 }
 #pragma endregion
 
@@ -1282,7 +1283,7 @@ inline auto leidenDynamicFrontierOmp(const G& y, const vector<tuple<K, K, V>>& d
   };
   constexpr int CHUNK_SIZE = 32;
   auto fa = [ ](auto u) { return true; };
-  return leidenInvokeOmp<true, true, CHUNK_SIZE>(y, o, fi, fm, fa);
+  return leidenInvokeOmp<true, CHUNK_SIZE>(y, o, fi, fm, fa);
 }
 #pragma endregion
 #pragma endregion
