@@ -85,19 +85,24 @@ inline float refinementTime(const LeidenResult<K, W>& a) {
 
 
 /**
- * Obtain the fraction of vertices with matching community membership.
- * @param ucom community membership
- * @param vcom another community membership
- * @returns fraction of matching vertices
+ * Get the tracking time of an algorithm result.
+ * @param a louvain result
+ * @returns tracking time
  */
-template <class K>
-inline float fractionMatchingOmp(const vector<K>& ucom, const vector<K>& vcom) {
-  size_t S = ucom.size();
-  size_t n = 0;
-  #pragma omp parallel for schedule(auto) reduction(+:n)
-  for (size_t u=0; u<S; ++u)
-    if (ucom[u]==vcom[u]) ++n;
-  return float(n)/S;
+template <class K, class W>
+inline float trackingTime(const LouvainResult<K, W>& a) {
+  return a.trackingTime;
+}
+
+
+/**
+ * Get the tracking time of an algorithm result.
+ * @param a leiden result
+ * @returns tracking time
+ */
+template <class K, class W>
+inline float trackingTime(const LeidenResult<K, W>& a) {
+  return a.trackingTime;
 }
 #pragma endregion
 
@@ -200,9 +205,9 @@ void runExperiment(const G& x) {
   auto glog = [&](const auto& ans, const char *technique, int numThreads, const auto& y, auto M, auto deletionsf, auto insertionsf) {
     printf(
       "{-%.3e/+%.3e batchf, %03d threads} -> "
-      "{%09.1fms, %09.1fms mark, %09.1fms init, %09.1fms firstpass, %09.1fms locmove, %09.1fms refine, %09.1fms aggr, %.3e aff, %04d iters, %03d passes, %01.9f modularity, %zu/%zu disconnected} %s\n",
+      "{%09.1fms, %09.1fms mark, %09.1fms init, %09.1fms firstpass, %09.1fms locmove, %09.1fms refine, %09.1fms aggr, %09.1fms track, %.3e aff, %04d iters, %03d passes, %01.9f modularity, %zu/%zu disconnected} %s\n",
       double(deletionsf), double(insertionsf), numThreads,
-      ans.time, ans.markingTime, ans.initializationTime, ans.firstPassTime, ans.localMoveTime, refinementTime(ans), ans.aggregationTime,
+      ans.time, ans.markingTime, ans.initializationTime, ans.firstPassTime, ans.localMoveTime, refinementTime(ans), ans.aggregationTime, trackingTime(ans),
       double(ans.affectedVertices), ans.iterations, ans.passes, getModularity(y, ans, M),
       countValue(communitiesDisconnectedOmp(y, ans.membership), char(1)),
       communities(y, ans.membership).size(), technique
@@ -238,13 +243,6 @@ void runExperiment(const G& x) {
       auto flog = [&](const auto& ans, const char *technique) {
         glog(ans, technique, numThreads, y, M, deletionsf, insertionsf);
       };
-      auto mlog = [&](const auto& ans, const auto& ref, const char *technique) {
-        printf(
-          "{-%.3e/+%.3e batchf, %03d threads} -> {%.3e match} %s\n",
-          double(deletionsf), double(insertionsf), numThreads,
-          fractionMatchingOmp(ref.membership, ans.membership), technique
-        );
-      };
       // Find static Louvain.
       {
         auto c1 = leidenStaticOmp(y, {repeat});
@@ -253,35 +251,29 @@ void runExperiment(const G& x) {
       // Find naive-dynamic Louvain.
       {
         auto c2 = leidenNaiveDynamicOmp(y, deletions, insertions, C2, VW, CW, {repeat});
-        auto d2 = leidenNaiveDynamicOmp(x, insertions, deletions, c2.membership, c2.vertexWeight, c2.communityWeight, {repeat});
-        mlog(d2, c0, "leidenNaiveDynamicOmp");
+        flog(c2, "leidenNaiveDynamicOmp");
       }
       {
         auto c2 = leidenNaiveDynamicOmp<true>(y, deletions, insertions, C2, VW, CW, {repeat});
-        auto d2 = leidenNaiveDynamicOmp<true>(x, insertions, deletions, c2.membership, c2.vertexWeight, c2.communityWeight, {repeat});
-        mlog(d2, c0, "leidenNaiveDynamicOmpTrack");
+        flog(c2, "leidenNaiveDynamicOmpTrack");
       }
       // Find delta-screening based dynamic Louvain.
       {
         auto c3 = leidenDynamicDeltaScreeningOmp(y, deletions, insertions, C3, VW, CW, {repeat});
-        auto d3 = leidenDynamicDeltaScreeningOmp(x, insertions, deletions, c3.membership, c3.vertexWeight, c3.communityWeight, {repeat});
-        mlog(d3, c0, "leidenDynamicDeltaScreeningOmp");
+        flog(c3, "leidenDynamicDeltaScreeningOmp");
       }
       {
         auto c3 = leidenDynamicDeltaScreeningOmp<true>(y, deletions, insertions, C3, VW, CW, {repeat});
-        auto d3 = leidenDynamicDeltaScreeningOmp<true>(x, insertions, deletions, c3.membership, c3.vertexWeight, c3.communityWeight, {repeat});
-        mlog(d3, c0, "leidenDynamicDeltaScreeningOmpTrack");
+        flog(c3, "leidenDynamicDeltaScreeningOmpTrack");
       }
       // Find frontier based dynamic Louvain.
       {
         auto c4 = leidenDynamicFrontierOmp(y, deletions, insertions, C4, VW, CW, {repeat});
-        auto d4 = leidenDynamicFrontierOmp(x, insertions, deletions, c4.membership, c4.vertexWeight, c4.communityWeight, {repeat});
-        mlog(d4, c0, "leidenDynamicFrontierOmp");
+        flog(c4, "leidenDynamicFrontierOmp");
       }
       {
         auto c4 = leidenDynamicFrontierOmp<true>(y, deletions, insertions, C4, VW, CW, {repeat});
-        auto d4 = leidenDynamicFrontierOmp<true>(x, insertions, deletions, c4.membership, c4.vertexWeight, c4.communityWeight, {repeat});
-        mlog(d4, c0, "leidenDynamicFrontierOmpTrack");
+        flog(c4, "leidenDynamicFrontierOmpTrack");
       }
       #if BATCH_LENGTH>1
       C2 = c2.membership;
