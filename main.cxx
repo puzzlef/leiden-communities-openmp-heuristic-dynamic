@@ -221,11 +221,11 @@ void runExperiment(const G& x) {
   int retries = 5;
   double M = edgeWeightOmp(x)/2;
   // Follow a specific result logging format, which can be easily parsed later.
-  auto glog = [&](const auto& ans, const char *technique, int numThreads, const auto& y, auto M, auto deletionsf, auto insertionsf) {
+  auto glog = [&](const auto& ans, const char *technique, int numThreads, const auto& y, auto M, auto deletionsf, auto insertionsf, double Q=0) {
     printf(
-      "{-%.3e/+%.3e batchf, %03d threads} -> "
+      "{-%.3e/+%.3e batchf, %03d threads, %.1f refinetol} -> "
       "{%09.1fms, %09.1fms mark, %09.1fms init, %09.1fms firstpass, %09.1fms locmove, %09.1fms split, %09.1fms refine, %09.1fms aggr, %09.1fms track, %.3e aff, %04d iters, %03d passes, %01.9f modularity, %zu/%zu disconnected} %s\n",
-      double(deletionsf), double(insertionsf), numThreads,
+      double(deletionsf), double(insertionsf), numThreads, Q,
       ans.time, ans.markingTime, ans.initializationTime, ans.firstPassTime, ans.localMoveTime, splittingTime(ans), refinementTime(ans), ans.aggregationTime, trackingTime(ans),
       double(ans.affectedVertices), ans.iterations, ans.passes, getModularity(y, ans, M),
       countValue(communitiesDisconnectedOmp(y, ans.membership), char(1)),
@@ -261,8 +261,8 @@ void runExperiment(const G& x) {
     #endif
     // Adjust number of threads.
     runThreads(epoch, [&](int numThreads) {
-      auto flog = [&](const auto& ans, const char *technique) {
-        glog(ans, technique, numThreads, y, M, deletionsf, insertionsf);
+      auto flog = [&](const auto& ans, const char *technique, double Q=0) {
+        glog(ans, technique, numThreads, y, M, deletionsf, insertionsf, Q);
       };
       // Find static Louvain.
       {
@@ -270,31 +270,31 @@ void runExperiment(const G& x) {
         flog(c1, "leidenStaticOmp");
       }
       // Find naive-dynamic Louvain.
-      {
-        auto c2 = leidenNaiveDynamicOmp(y, deletions, insertions, C2, VW, CW, DW, {repeat});
-        flog(c2, "leidenNaiveDynamicOmp");
+      // for (double Q=0.1; Q<=0.9; Q+=0.1) {
+      //   auto c2 = leidenNaiveDynamicOmp(y, deletions, insertions, C2, VW, CW, DW, {repeat, 1, 1e-2, 1, Q});
+      //   flog(c2, "leidenNaiveDynamicOmp", Q);
+      // }
+      for (double Q=0.1; Q<=0.9; Q+=0.1) {
+        auto c2 = leidenNaiveDynamicOmp<true>(y, deletions, insertions, C2, VW, CW, DW, {repeat, 1, 1e-2, 1, Q});
+        flog(c2, "leidenNaiveDynamicOmpTrack", Q);
       }
-      {
-        auto c2 = leidenNaiveDynamicOmp<true>(y, deletions, insertions, C2, VW, CW, DW, {repeat});
-        flog(c2, "leidenNaiveDynamicOmpTrack");
-      }
-      // Find delta-screening based dynamic Louvain.
-      {
-        auto c3 = leidenDynamicDeltaScreeningOmp(y, deletions, insertions, C3, VW, CW, DW, {repeat});
-        flog(c3, "leidenDynamicDeltaScreeningOmp");
-      }
-      {
-        auto c3 = leidenDynamicDeltaScreeningOmp<true>(y, deletions, insertions, C3, VW, CW, DW, {repeat});
-        flog(c3, "leidenDynamicDeltaScreeningOmpTrack");
+      // // Find delta-screening based dynamic Louvain.
+      // for (double Q=0.1; Q<=0.9; Q+=0.1) {
+      //   auto c3 = leidenDynamicDeltaScreeningOmp(y, deletions, insertions, C3, VW, CW, DW, {repeat, 1, 1e-2, 1, Q});
+      //   flog(c3, "leidenDynamicDeltaScreeningOmp", Q);
+      // }
+      for (double Q=0.1; Q<=0.9; Q+=0.1) {
+        auto c3 = leidenDynamicDeltaScreeningOmp<true>(y, deletions, insertions, C3, VW, CW, DW, {repeat, 1, 1e-2, 1, Q});
+        flog(c3, "leidenDynamicDeltaScreeningOmpTrack", Q);
       }
       // Find frontier based dynamic Louvain.
-      {
-        auto c4 = leidenDynamicFrontierOmp(y, deletions, insertions, C4, VW, CW, DW, {repeat});
-        flog(c4, "leidenDynamicFrontierOmp");
-      }
-      {
-        auto c4 = leidenDynamicFrontierOmp<true>(y, deletions, insertions, C4, VW, CW, DW, {repeat});
-        flog(c4, "leidenDynamicFrontierOmpTrack");
+      // for (double Q=0.1; Q<=0.9; Q+=0.1) {
+      //   auto c4 = leidenDynamicFrontierOmp(y, deletions, insertions, C4, VW, CW, DW, {repeat, 1, 1e-2, 1, Q});
+      //   flog(c4, "leidenDynamicFrontierOmp", Q);
+      // }
+      for (double Q=0.1; Q<=0.9; Q+=0.1) {
+        auto c4 = leidenDynamicFrontierOmp<true>(y, deletions, insertions, C4, VW, CW, DW, {repeat, 1, 1e-2, 1, Q});
+        flog(c4, "leidenDynamicFrontierOmpTrack", Q);
       }
       #if BATCH_LENGTH>1
       C2 = c2.membership;
