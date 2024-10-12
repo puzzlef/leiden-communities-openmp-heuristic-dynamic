@@ -571,7 +571,7 @@ inline int leidenMoveOmpW(vector<K>& vcom, vector<W>& ctot, vector<B>& vaff, vec
       leidenScanCommunitiesW<false, REFINE>(*vcs[t], *vcout[t], x, u, vcom, vcob);
       auto [c, e] = leidenChooseCommunity(x, u, d, vtot, ctot, *vcs[t], *vcout[t], M, R);
       if (e && leidenChangeCommunityOmpW<REFINE>(vcom, ctot, x, u, d, c, vtot)) {
-        if (!REFINE) { fb(d); fb(c); }
+        if (!REFINE) fb(d);
         if (!REFINE) x.forEachEdgeKey(u, [&](auto v) { vaff[v] = B(1); });
       }
       if (!REFINE) vaff[u] = B();
@@ -830,16 +830,24 @@ inline void leidenAggregateOmpW(vector<size_t>& yoff, vector<K>& ydeg, vector<K>
  * @param vs per-thread frontier vertices for BFS (scratch)
  * @param x given graph
  * @param vdom community each vertex belongs to
+ * @param fs does community need to be split?
  */
-template <class B, class G, class K>
-inline void splitDisconnectedCommunitiesBfsOmpW(vector<K>& vcom, vector<B>& cbsy, vector<B>& vis, vector<vector<K>*>& us, vector<vector<K>*>& vs, const G& x, const vector<K>& vdom) {
+template <class B, class G, class K, class FS>
+inline void splitDisconnectedCommunitiesBfsOmpW(vector<K>& vcom, vector<B>& cbsy, vector<B>& vis, vector<vector<K>*>& us, vector<vector<K>*>& vs, const G& x, const vector<K>& vdom, FS fs) {
   size_t S = x.span();
   // Initialize each vertex to its own label/subcommunity.
   #pragma omp parallel for schedule(auto)
   for (K u=0; u<S; ++u) {
-    vcom[u] = u;
+    if (!x.hasVertex(u)) continue;
     cbsy[u] = B();
-    vis[u]  = B();
+    if (fs(vdom[u])) {
+      vcom[u] = u;
+      vis[u]  = B();
+    }
+    else {
+      vcom[u] = vdom[u];
+      vis[u]  = B(1);
+    }
   }
   // Perform DFS from an untouched vertex, within each community (each thread picks a community atomically).
   #pragma omp parallel
@@ -979,6 +987,7 @@ inline auto leidenInvokeOmp(const G& x, const LeidenOptions& o, FI fi, FM fm, FA
   int    T = omp_get_max_threads();
   vector<B> vaff(S);        // Affected vertex flag (any pass)
   vector<B> cchg;           // Community changed flag (first pass)
+  vector<B> bufb;           // Buffer for splitting communities
   vector<K> bufc;           // Buffer for obtaining a vertex from each community
   vector<K> ucom, vcom(S);  // Community membership (first pass, current pass)
   vector<K> udom, vcob(S);  // Community bound (any pass)
@@ -1001,6 +1010,7 @@ inline auto leidenInvokeOmp(const G& x, const LeidenOptions& o, FI fi, FM fm, FA
   if (!DYNAMIC) ctot.resize(S);
   if (!DYNAMIC) cdwt.resize(S);
   if ( DYNAMIC) cchg.resize(S);
+  if ( DYNAMIC) bufb.resize(S);
   if ( DYNAMIC) bufc.resize(S);
   if ( DYNAMIC) dtot.resize(S);
   if ( TRACK)   udom.resize(S);
@@ -1051,13 +1061,14 @@ inline auto leidenInvokeOmp(const G& x, const LeidenOptions& o, FI fi, FM fm, FA
         bool isFirst = p==0;
         int m = 0;
         tl += measureDuration([&]() {
-          auto fb = [&](auto c) { if (DYNAMIC) cchg[c] = B(1); };  // Track communities that need to be refined
+          auto fb = [&](auto c) {};
           if (isFirst) m += leidenMoveOmpW(ucom, ctot, vaff, vcs, vcout, x, vcob, utot, M, R, L, fc, fa, fb);
           else         m += leidenMoveOmpW(vcom, ctot, vaff, vcs, vcout, y, vcob, vtot, M, R, L, fc);
         });
         ts += measureDuration([&]() {
-          if (DYNAMIC && isFirst && !CCHG) {
-            splitDisconnectedCommunitiesBfsOmpW(vcom, cchg, vaff, us, vs, x, ucom);
+          if (DYNAMIC && isFirst) {
+            auto fs = [&](auto c) { return !cchg[c]; };
+            splitDisconnectedCommunitiesBfsOmpW(vcom, bufb, vaff, us, vs, x, ucom, fs);
             swap(ucom, vcom);
           }
         });
