@@ -38,6 +38,8 @@ struct LeidenOptions {
   double tolerance;
   /** Tolerance for aggregation [0.8]. */
   double aggregationTolerance;
+  /** Tolerance for refinement [0.5]. */
+  double refinementTolerance;
   /** Tolerance drop factor after each pass [10]. */
   double toleranceDrop;
   /** Maximum number of iterations per pass [20]. */
@@ -54,12 +56,13 @@ struct LeidenOptions {
    * @param resolution resolution parameter for modularity [1]
    * @param tolerance tolerance for convergence [1e-2]
    * @param aggregationTolerance tolerance for aggregation [0.8]
+   * @param refinementTolerance tolerance for refinement [0.5]
    * @param toleranceDrop tolerance drop factor after each pass [10]
    * @param maxIterations maximum number of iterations per pass [20]
    * @param maxPasses maximum number of passes [10]
    */
-  LeidenOptions(int repeat=1, double resolution=1, double tolerance=1e-2, double aggregationTolerance=1.0, double toleranceDrop=10, int maxIterations=20, int maxPasses=10) :
-  repeat(repeat), resolution(resolution), tolerance(tolerance), aggregationTolerance(aggregationTolerance), toleranceDrop(toleranceDrop), maxIterations(maxIterations), maxPasses(maxPasses) {}
+  LeidenOptions(int repeat=1, double resolution=1, double tolerance=1e-2, double aggregationTolerance=1.0, double refinementTolerance=0.5, double toleranceDrop=10, int maxIterations=20, int maxPasses=10) :
+  repeat(repeat), resolution(resolution), tolerance(tolerance), aggregationTolerance(aggregationTolerance), refinementTolerance(refinementTolerance), toleranceDrop(toleranceDrop), maxIterations(maxIterations), maxPasses(maxPasses) {}
   #pragma endregion
 };
 
@@ -84,6 +87,8 @@ struct LeidenResult {
   vector<W> vertexWeight;
   /** Total edge weight of each community. */
   vector<W> communityWeight;
+  /** Change in Total edge weight of each community, since it was last refined. */
+  vector<W> communityWeightChanged;
   /** Number of iterations performed. */
   int iterations;
   /** Number of passes performed. */
@@ -98,6 +103,8 @@ struct LeidenResult {
   float firstPassTime;
   /** Time spent in milliseconds in local-moving phase. */
   float localMoveTime;
+  /** Time spent in milliseconds in splitting phase. */
+  float splittingTime;
   /** Time spent in milliseconds in refinement phase. */
   float refinementTime;
   /** Time spent in milliseconds in aggregation phase. */
@@ -115,6 +122,7 @@ struct LeidenResult {
    * @param membership community membership each vertex belongs to
    * @param vertexWeight total edge weight of each vertex
    * @param communityWeight total edge weight of each community
+   * @param communityWeightChanged change in total edge weight of each community, since it was last refined
    * @param iterations number of iterations performed
    * @param passes number of passes performed
    * @param time time spent in milliseconds
@@ -122,13 +130,14 @@ struct LeidenResult {
    * @param initializationTime time spent in initializing community memberships and total vertex/community weights
    * @param firstPassTime time spent in milliseconds in first pass
    * @param localMoveTime time spent in milliseconds in local-moving phase
+   * @param splittingTime time spent in milliseconds in splitting phase
    * @param refinementTime time spent in milliseconds in refinement phase
    * @param aggregationTime time spent in milliseconds in aggregation phase
    * @param trackingTime time spent in milliseconds in tracking phase
    * @param affectedVertices number of vertices initially marked as affected
    */
-  LeidenResult(vector<K>&& membership, vector<W>&& vertexWeight, vector<W>&& communityWeight, int iterations=0, int passes=0, float time=0, float markingTime=0, float initializationTime=0, float firstPassTime=0, float localMoveTime=0, float refinementTime=0, float aggregationTime=0, float trackingTime=0, size_t affectedVertices=0) :
-  membership(membership), vertexWeight(vertexWeight), communityWeight(communityWeight), iterations(iterations), passes(passes), time(time), markingTime(markingTime), initializationTime(initializationTime), firstPassTime(firstPassTime), localMoveTime(localMoveTime), refinementTime(refinementTime), aggregationTime(aggregationTime), trackingTime(trackingTime), affectedVertices(affectedVertices) {}
+  LeidenResult(vector<K>&& membership, vector<W>&& vertexWeight, vector<W>&& communityWeight, vector<W>&& communityWeightChanged, int iterations=0, int passes=0, float time=0, float markingTime=0, float initializationTime=0, float firstPassTime=0, float localMoveTime=0, float splittingTime=0, float refinementTime=0, float aggregationTime=0, float trackingTime=0, size_t affectedVertices=0) :
+  membership(membership), vertexWeight(vertexWeight), communityWeight(communityWeight), communityWeightChanged(communityWeightChanged), iterations(iterations), passes(passes), time(time), markingTime(markingTime), initializationTime(initializationTime), firstPassTime(firstPassTime), localMoveTime(localMoveTime), splittingTime(splittingTime), refinementTime(refinementTime), aggregationTime(aggregationTime), trackingTime(trackingTime), affectedVertices(affectedVertices) {}
 
 
   /**
@@ -136,6 +145,7 @@ struct LeidenResult {
    * @param membership community membership each vertex belongs to (moved)
    * @param vertexWeight total edge weight of each vertex (moved)
    * @param communityWeight total edge weight of each community (moved)
+   * @param communityWeightChanged change in total edge weight of each community, since it was last refined (moved)
    * @param iterations number of iterations performed
    * @param passes number of passes performed
    * @param time time spent in milliseconds
@@ -143,13 +153,14 @@ struct LeidenResult {
    * @param initializationTime time spent in initializing community memberships and total vertex/community weights
    * @param firstPassTime time spent in milliseconds in first pass
    * @param localMoveTime time spent in milliseconds in local-moving phase
+   * @param splittingTime time spent in milliseconds in splitting phase
    * @param refinementTime time spent in milliseconds in refinement phase
    * @param aggregationTime time spent in milliseconds in aggregation phase
    * @param trackingTime time spent in milliseconds in tracking phase
    * @param affectedVertices number of vertices initially marked as affected
    */
-  LeidenResult(vector<K>& membership, vector<W>& vertexWeight, vector<W>& communityWeight, int iterations=0, int passes=0, float time=0, float markingTime=0, float initializationTime=0, float firstPassTime=0, float localMoveTime=0, float refinementTime=0, float aggregationTime=0, float trackingTime=0, size_t affectedVertices=0) :
-  membership(move(membership)), vertexWeight(move(vertexWeight)), communityWeight(move(communityWeight)), iterations(iterations), passes(passes), time(time), markingTime(markingTime), initializationTime(initializationTime), firstPassTime(firstPassTime), localMoveTime(localMoveTime), refinementTime(refinementTime), aggregationTime(aggregationTime), trackingTime(trackingTime), affectedVertices(affectedVertices) {}
+  LeidenResult(vector<K>& membership, vector<W>& vertexWeight, vector<W>& communityWeight, vector<W>& communityWeightChanged, int iterations=0, int passes=0, float time=0, float markingTime=0, float initializationTime=0, float firstPassTime=0, float localMoveTime=0, float splittingTime=0, float refinementTime=0, float aggregationTime=0, float trackingTime=0, size_t affectedVertices=0) :
+  membership(move(membership)), vertexWeight(move(vertexWeight)), communityWeight(move(communityWeight)), communityWeightChanged(move(communityWeightChanged)), iterations(iterations), passes(passes), time(time), markingTime(markingTime), initializationTime(initializationTime), firstPassTime(firstPassTime), localMoveTime(localMoveTime), splittingTime(splittingTime), refinementTime(refinementTime), aggregationTime(aggregationTime), trackingTime(trackingTime), affectedVertices(affectedVertices) {}
   #pragma endregion
 };
 #pragma endregion
@@ -348,24 +359,25 @@ inline void leidenInitializeFromOmpW(vector<K>& vcom, vector<W>& ctot, const G& 
  * Update weights using given edge deletions and insertions.
  * @param vtot total edge weight of each vertex (updated)
  * @param ctot total edge weight of each community (updated)
+ * @param cdwt change in total edge weight of each community (updated)
  * @param y updated graph
  * @param deletions edge deletions in batch update
  * @param insertions edge insertions in batch update
  * @param vcom community each vertex belongs to
  */
 template <class G, class K, class V, class W>
-inline void leidenUpdateWeightsFromOmpU(vector<W>& vtot, vector<W>& ctot, const G& y, const vector<tuple<K, K, V>>& deletions, const vector<tuple<K, K, V>>& insertions, const vector<K>& vcom) {
+inline void leidenUpdateWeightsFromOmpU(vector<W>& vtot, vector<W>& ctot, vector<W>& cdwt, const G& y, const vector<tuple<K, K, V>>& deletions, const vector<tuple<K, K, V>>& insertions, const vector<K>& vcom) {
   #pragma omp parallel
   {
     for (auto [u, v, w] : deletions) {
       K c = vcom[u];
       if (belongsOmp(u)) vtot[u] -= w;
-      if (belongsOmp(c)) ctot[c] -= w;
+      if (belongsOmp(c)) { ctot[c] -= w; cdwt[c] += w; }
     }
     for (auto [u, v, w] : insertions) {
       K c = vcom[u];
       if (belongsOmp(u)) vtot[u] += w;
-      if (belongsOmp(c)) ctot[c] += w;
+      if (belongsOmp(c)) { ctot[c] += w; cdwt[c] += w; }
     }
   }
 }
@@ -972,13 +984,22 @@ inline auto leidenInvokeOmp(const G& x, const LeidenOptions& o, FI fi, FM fm, FA
   vector<K> udom, vcob(S);  // Community bound (any pass)
   vector<W> utot, vtot(S);  // Total vertex weights (first pass, current pass)
   vector<W> ctot, dtot;     // Total community weights (any pass)
+  vector<W> cdwt;           // Change in total weight of each community
   vector<K> bufk(T);        // Buffer for exclusive scan
   vector<size_t> bufs(T);   // Buffer for exclusive scan
   vector<vector<K>*> vcs(T);    // Hashtable keys
   vector<vector<W>*> vcout(T);  // Hashtable values
+  vector<vector<K>*> us(T), vs(T);  // BFS scratch space
+  for (int t=0; t<T; ++t) {
+    us[t] = new vector<K>();
+    vs[t] = new vector<K>();
+    us[t]->reserve(S);
+    vs[t]->reserve(S);
+  }
   if (!DYNAMIC) ucom.resize(S);
   if (!DYNAMIC) utot.resize(S);
   if (!DYNAMIC) ctot.resize(S);
+  if (!DYNAMIC) cdwt.resize(S);
   if ( DYNAMIC) cchg.resize(S);
   if ( DYNAMIC) bufc.resize(S);
   if ( DYNAMIC) dtot.resize(S);
@@ -990,7 +1011,7 @@ inline auto leidenInvokeOmp(const G& x, const LeidenOptions& o, FI fi, FM fm, FA
   DiGraphCsr<K, None, W> y(S, Y);         // CSR for aggregated graph (input);  y(S, X)
   DiGraphCsr<K, None, W> z(S, Z);         // CSR for aggregated graph (output); z(S, X)
   // Perform Leiden algorithm.
-  float tm = 0, ti = 0, tp = 0, tl = 0, tr = 0, ta = 0, tt = 0;  // Time spent in different phases
+  float tm = 0, ti = 0, tp = 0, tl = 0, ts = 0, tr = 0, ta = 0, tt = 0;  // Time spent in different phases
   float t  = measureDurationMarked([&](auto mark) {
     double E  = o.tolerance;
     auto   fc = [&](double el, int l) { return el<=E; };
@@ -1004,19 +1025,21 @@ inline auto leidenInvokeOmp(const G& x, const LeidenOptions& o, FI fi, FM fm, FA
     fillValueOmpU(utot, W());
     fillValueOmpU(vtot, W());
     fillValueOmpU(ctot, W());
+    fillValueOmpU(cdwt, W());
     cv.respan(S);
     y .respan(S);
     z .respan(S);
     // Time the algorithm.
     mark([&]() {
+      size_t CCHG = 0;
       // Initialize community membership and total vertex/community weights.
       ti += measureDuration([&]() {
-        fi(ucom, utot, ctot);
+        fi(ucom, utot, ctot, cdwt);
         if (TRACK) copyValuesOmpW(udom, ucom);
       });
       // Mark affected vertices.
       tm += measureDuration([&]() {
-        fm(vaff, cchg, vcs, vcout, ucom, utot, ctot);
+        CCHG = fm(vaff, cchg, cdwt, vcs, vcout, ucom, utot, ctot);
       });
       // Start timing first pass.
       auto t0 = timeNow(), t1 = t0;
@@ -1032,24 +1055,32 @@ inline auto leidenInvokeOmp(const G& x, const LeidenOptions& o, FI fi, FM fm, FA
           if (isFirst) m += leidenMoveOmpW(ucom, ctot, vaff, vcs, vcout, x, vcob, utot, M, R, L, fc, fa, fb);
           else         m += leidenMoveOmpW(vcom, ctot, vaff, vcs, vcout, y, vcob, vtot, M, R, L, fc);
         });
+        ts += measureDuration([&]() {
+          if (DYNAMIC && isFirst && !CCHG) {
+            splitDisconnectedCommunitiesBfsOmpW(vcom, cchg, vaff, us, vs, x, ucom);
+            swap(ucom, vcom);
+          }
+        });
         tr += measureDuration([&]() {
           // Adjust community IDs.
-          if (DYNAMIC && isFirst) {
+          if (DYNAMIC && isFirst && CCHG) {
             swap(ctot, dtot); swap(ucom, vcob); swap(cchg, vaff);
             leidenSubsetRenameCommunitiesOmpW(ucom, ctot, cchg, bufc, x, vcob, dtot, vaff);
           }
-          auto fr = [&](auto u) { return DYNAMIC? cchg[vcob[u]] : B(1); };
-          if (isFirst) copyValuesOmpW(vcob.data(), ucom.data(), x.span());  // swap(vcob, ucom);
-          else         copyValuesOmpW(vcob.data(), vcom.data(), y.span());  // swap(vcob, vcom);
-          if (isFirst) leidenInitializeOmpW(ucom, ctot, x, utot, fr);
-          else         leidenInitializeOmpW(vcom, ctot, y, vtot);
-          // if (isFirst) fillValueOmpU(vaff.data(), x.order(), B(1));
-          // else         fillValueOmpU(vaff.data(), y.order(), B(1));
-          if (isFirst) m += leidenMoveOmpW<true>(ucom, ctot, vaff, vcs, vcout, x, vcob, utot, M, R, L, fc, fr);
-          else         m += leidenMoveOmpW<true>(vcom, ctot, vaff, vcs, vcout, y, vcob, vtot, M, R, L, fc);
+          if (!isFirst || !DYNAMIC || CCHG) {
+            auto fr = [&](auto u) { return DYNAMIC? cchg[vcob[u]] : B(1); };
+            if (isFirst) copyValuesOmpW(vcob.data(), ucom.data(), x.span());  // swap(vcob, ucom);
+            else         copyValuesOmpW(vcob.data(), vcom.data(), y.span());  // swap(vcob, vcom);
+            if (isFirst) leidenInitializeOmpW(ucom, ctot, x, utot, fr);
+            else         leidenInitializeOmpW(vcom, ctot, y, vtot);
+            // if (isFirst) fillValueOmpU(vaff.data(), x.order(), B(1));
+            // else         fillValueOmpU(vaff.data(), y.order(), B(1));
+            if (isFirst) m += leidenMoveOmpW<true>(ucom, ctot, vaff, vcs, vcout, x, vcob, utot, M, R, L, fc, fr);
+            else         m += leidenMoveOmpW<true>(vcom, ctot, vaff, vcs, vcout, y, vcob, vtot, M, R, L, fc);
+          }
         });
         l += max(m, 1); ++p;
-        if (!isFirst && (m<=1 || p>=P)) break;
+        if ((m<=1 || p>=P) && (!isFirst || !CCHG)) break;
         size_t GN = isFirst? x.order() : y.order();
         size_t CN = 0;
         if (isFirst) CN = leidenCommunityExistsOmpW(cv.degrees, x, ucom);
@@ -1086,7 +1117,11 @@ inline auto leidenInvokeOmp(const G& x, const LeidenOptions& o, FI fi, FM fm, FA
     });
   }, o.repeat);
   leidenFreeHashtablesW(vcs, vcout);
-  return LeidenResult<K>(ucom, utot, ctot, l, p, t, tm/o.repeat, ti/o.repeat, tp/o.repeat, tl/o.repeat, tr/o.repeat, ta/o.repeat, tt/o.repeat, countValueOmp(vaff, B(1)));
+  for (int t=0; t<T; ++t) {
+    delete us[t];
+    delete vs[t];
+  }
+  return LeidenResult<K>(ucom, utot, ctot, cdwt, l, p, t, tm/o.repeat, ti/o.repeat, tp/o.repeat, tl/o.repeat, ts/o.repeat, tr/o.repeat, ta/o.repeat, tt/o.repeat, countValueOmp(vaff, B(1)));
 }
 #pragma endregion
 
@@ -1099,20 +1134,24 @@ inline auto leidenInvokeOmp(const G& x, const LeidenOptions& o, FI fi, FM fm, FA
  * @param qs initial community membership for each run (updated)
  * @param qvtots initial total vertex weights for each run (updated)
  * @param qctots initial total community weights for each run (updated)
+ * @param qcdwts initial change in total weight of each community for each run (updated)
  * @param q initial community membership
  * @param qvtot initial total vertex weights
  * @param qctot initial total community weights
+ * @param qcdwt initial change in total weight of each community
  * @param repeat number of runs
  */
 template <class K, class W>
-inline void leidenSetupInitialsW(vector2d<K>& qs, vector2d<W>& qvtots, vector2d<W>& qctots, const vector<K>& q, const vector<W>& qvtot, const vector<W>& qctot, int repeat) {
+inline void leidenSetupInitialsW(vector2d<K>& qs, vector2d<W>& qvtots, vector2d<W>& qctots, vector2d<W>& qcdwts, const vector<K>& q, const vector<W>& qvtot, const vector<W>& qctot, const vector<W>& qcdwt, int repeat) {
   qs    .resize(repeat);
   qvtots.resize(repeat);
   qctots.resize(repeat);
+  qcdwts.resize(repeat);
   for (int r=0; r<repeat; ++r) {
     qs[r]     = q;
     qvtots[r] = qvtot;
     qctots[r] = qctot;
+    qcdwts[r] = qcdwt;
   }
 }
 #pragma endregion
@@ -1130,12 +1169,15 @@ inline void leidenSetupInitialsW(vector2d<K>& qs, vector2d<W>& qvtots, vector2d<
 template <class G>
 inline auto leidenStaticOmp(const G& x, const LeidenOptions& o={}) {
   using B = char;
-  auto fi = [&](auto& vcom, auto& vtot, auto& ctot)  {
+  using W = LEIDEN_WEIGHT_TYPE;
+  auto fi = [&](auto& vcom, auto& vtot, auto& ctot, auto& cdwt) {
     leidenVertexWeightsOmpW(vtot, x);
     leidenInitializeOmpW(vcom, ctot, x, vtot);
+    fillValueOmpU(cdwt, W());
   };
-  auto fm = [ ](auto& vaff, auto& cchg, auto& vcs, auto& vcout, const auto& vcom, const auto& vtot, const auto& ctot) {
+  auto fm = [ ](auto& vaff, auto& cchg, auto& cdwt, auto& vcs, auto& vcout, const auto& vcom, const auto& vtot, const auto& ctot) {
     fillValueOmpU(vaff, B(1));
+    return size_t(1);
   };
   auto fa = [ ](auto u) { return true; };
   return leidenInvokeOmp<false>(x, o, fi, fm, fa);
@@ -1149,30 +1191,44 @@ inline auto leidenStaticOmp(const G& x, const LeidenOptions& o={}) {
 /**
  * Mark changed communities due to edge deletions and insertions.
  * @param cchg community changed flag (updated)
+ * @param cdwt change in total edge weight of each community (updated)
  * @param y updated graph
- * @param vcom community each vertex belongs to
  * @param deletions edge deletions for this batch update (undirected)
  * @param insertions edge insertions for this batch update (undirected)
+ * @param vcom community each vertex belongs to
+ * @param ctot total edge weight of each community
+ * @param Q refinement tolerance
+ * @returns number of communities marked as changed
  */
-template <class B, class G, class K, class V>
-inline void leidenChangedCommunitiesOmpU(vector<B>& cchg, const G& y, const vector<K>& vcom, const vector<tuple<K, K, V>>& deletions, const vector<tuple<K, K, V>>& insertions) {
+template <class B, class G, class K, class V, class W>
+inline size_t leidenChangedCommunitiesOmpU(vector<B>& cchg, vector<W>& cdwt, const G& y, const vector<tuple<K, K, V>>& deletions, const vector<tuple<K, K, V>>& insertions, const vector<K>& vcom, const vector<W>& ctot, double Q) {
   size_t S = y.span();
   size_t D = deletions.size();
   size_t I = insertions.size();
-  #pragma omp parallel for schedule(auto)
+  size_t CCHG = 0;
+  #pragma omp parallel for schedule(auto) reduction(+:CCHG)
   for (size_t i=0; i<D; ++i) {
     K u = get<0>(deletions[i]);
     K v = get<1>(deletions[i]);
     if (vcom[u] != vcom[v]) continue;
-    cchg[vcom[u]] = B(1);
+    K c = vcom[u];
+    if (cdwt[c] / ctot[c] < Q) continue;
+    cchg[c] = B(1);
+    cdwt[c] = W();
+    ++CCHG;
   }
-  #pragma omp parallel for schedule(auto)
+  #pragma omp parallel for schedule(auto) reduction(+:CCHG)
   for (size_t i=0; i<I; ++i) {
     K u = get<0>(insertions[i]);
     K v = get<1>(insertions[i]);
     if (vcom[u] != vcom[v]) continue;
-    cchg[vcom[u]] = B(1);
+    K c = vcom[u];
+    if (cdwt[c] / ctot[c] < Q) continue;
+    cchg[c] = B(1);
+    cdwt[c] = W();
+    ++CCHG;
   }
+  return CCHG;
 }
 
 
@@ -1184,25 +1240,28 @@ inline void leidenChangedCommunitiesOmpU(vector<B>& cchg, const G& y, const vect
  * @param q initial community each vertex belongs to
  * @param qvtot initial total edge weight of each vertex
  * @param qctot initial total edge weight of each community
+ * @param qcdwt initial change in total edge weight of each community
  * @param o leiden options
  * @returns leiden result
  */
 template <bool TRACK=false, class G, class K, class V, class W>
-inline auto leidenNaiveDynamicOmp(const G& y, const vector<tuple<K, K, V>>& deletions, const vector<tuple<K, K, V>>& insertions, const vector<K>& q, const vector<W>& qvtot, const vector<W>& qctot, const LeidenOptions& o={}) {
+inline auto leidenNaiveDynamicOmp(const G& y, const vector<tuple<K, K, V>>& deletions, const vector<tuple<K, K, V>>& insertions, const vector<K>& q, const vector<W>& qvtot, const vector<W>& qctot, const vector<W>& qcdwt, const LeidenOptions& o={}) {
   using B = char;
   vector2d<K> qs;
-  vector2d<W> qvtots, qctots;
-  leidenSetupInitialsW(qs, qvtots, qctots, q, qvtot, qctot, o.repeat);
+  vector2d<W> qvtots, qctots, qcdwts;
+  leidenSetupInitialsW(qs, qvtots, qctots, qcdwts, q, qvtot, qctot, qcdwt, o.repeat);
   int  r  = 0;
-  auto fi = [&](auto& vcom, auto& vtot, auto& ctot)  {
+  auto fi = [&](auto& vcom, auto& vtot, auto& ctot, auto& cdwt)  {
     vcom = move(qs[r]);
     vtot = move(qvtots[r]);
-    ctot = move(qctots[r]); ++r;
-    leidenUpdateWeightsFromOmpU(vtot, ctot, y, deletions, insertions, vcom);
+    ctot = move(qctots[r]);
+    cdwt = move(qcdwts[r]); ++r;
+    leidenUpdateWeightsFromOmpU(vtot, ctot, cdwt, y, deletions, insertions, vcom);
   };
-  auto fm = [&](auto& vaff, auto& cchg, auto& vcs, auto& vcout, const auto& vcom, const auto& vtot, const auto& ctot) {
+  auto fm = [&](auto& vaff, auto& cchg, auto& cdwt, auto& vcs, auto& vcout, const auto& vcom, const auto& vtot, const auto& ctot) {
     fillValueOmpU(vaff, B(1));
-    leidenChangedCommunitiesOmpU(cchg, y, vcom, deletions, insertions);
+    size_t CCHG = leidenChangedCommunitiesOmpU(cchg, cdwt, y, deletions, insertions, vcom, ctot, o.refinementTolerance);
+    return CCHG;
   };
   auto fa = [ ](auto u) { return true; };
   return leidenInvokeOmp<true, TRACK>(y, o, fi, fm, fa);
@@ -1219,6 +1278,7 @@ inline auto leidenNaiveDynamicOmp(const G& y, const vector<tuple<K, K, V>>& dele
  * @param neighbors neighbor affected flags (output)
  * @param communities community affected flags (output)
  * @param cchg community changed flags (updated)
+ * @param cdwt change in total edge weight of each community (updated)
  * @param vcs communities vertex u is linked to (temporary buffer, updated)
  * @param vcout total edge weight from vertex u to community C (temporary buffer, updated)
  * @param y updated graph
@@ -1228,17 +1288,20 @@ inline auto leidenNaiveDynamicOmp(const G& y, const vector<tuple<K, K, V>>& dele
  * @param vtot total edge weight of each vertex
  * @param ctot total edge weight of each community
  * @param M total weight of "undirected" graph (1/2 of directed graph)
+ * @param Q refinement tolerance
  * @param R resolution (0, 1]
+ * @returns number of communities marked as changed
  */
 template <class B, class G, class K, class V, class W>
-inline auto leidenAffectedVerticesDeltaScreeningOmpW(vector<B>& vertices, vector<B>& neighbors, vector<B>& communities, vector<B>& cchg, vector<vector<K>*>& vcs, vector<vector<W>*>& vcout, const G& y, const vector<tuple<K, K, V>>& deletions, const vector<tuple<K, K, V>>& insertions, const vector<K>& vcom, const vector<W>& vtot, const vector<W>& ctot, double M, double R=1) {
+inline size_t leidenAffectedVerticesDeltaScreeningOmpW(vector<B>& vertices, vector<B>& neighbors, vector<B>& communities, vector<B>& cchg, vector<W>& cdwt, vector<vector<K>*>& vcs, vector<vector<W>*>& vcout, const G& y, const vector<tuple<K, K, V>>& deletions, const vector<tuple<K, K, V>>& insertions, const vector<K>& vcom, const vector<W>& vtot, const vector<W>& ctot, double M, double Q, double R=1) {
   size_t S = y.span();
   size_t D = deletions.size();
   size_t I = insertions.size();
+  size_t CCHG = 0;
   fillValueOmpU(vertices,    B());
   fillValueOmpU(neighbors,   B());
   fillValueOmpU(communities, B());
-  #pragma omp parallel for schedule(auto)
+  #pragma omp parallel for schedule(auto) reduction(+:CCHG)
   for (size_t i=0; i<D; ++i) {
     K u = get<0>(deletions[i]);
     K v = get<1>(deletions[i]);
@@ -1246,9 +1309,13 @@ inline auto leidenAffectedVerticesDeltaScreeningOmpW(vector<B>& vertices, vector
     vertices[u]  = 1;
     neighbors[u] = 1;
     communities[vcom[v]] = 1;
-    cchg[vcom[u]] = 1;
+    K c = vcom[u];
+    if (cdwt[c] / ctot[c] < Q) continue;
+    cchg[c] = B(1);
+    cdwt[c] = W();
+    ++CCHG;
   }
-  #pragma omp parallel
+  #pragma omp parallel reduction(+:CCHG)
   {
     int T = omp_get_num_threads();
     int t = omp_get_thread_num();
@@ -1261,7 +1328,14 @@ inline auto leidenAffectedVerticesDeltaScreeningOmpW(vector<B>& vertices, vector
       for (; i<I && get<0>(insertions[i])==u; ++i) {
         K v = get<1>(insertions[i]);
         V w = get<2>(insertions[i]);
-        if (vcom[u] == vcom[v]) { cchg[vcom[u]] = 1; continue; }
+        if (vcom[u] == vcom[v]) {
+          K c = vcom[u];
+          if (cdwt[c] / ctot[c] < Q) continue;
+          cchg[c] = B(1);
+          cdwt[c] = W();
+          ++CCHG;
+          continue;
+        }
         leidenScanCommunityW(*vcs[t], *vcout[t], u, v, w, vcom);
       }
       auto [c, e] = leidenChooseCommunity(y, u, vcom[u], vtot, ctot, *vcs[t], *vcout[t], M, R);
@@ -1277,6 +1351,7 @@ inline auto leidenAffectedVerticesDeltaScreeningOmpW(vector<B>& vertices, vector
     if (neighbors[u]) y.forEachEdgeKey(u, [&](auto v) { vertices[v] = 1; });
     if (communities[vcom[u]]) vertices[u] = 1;
   }
+  return CCHG;
 }
 
 
@@ -1288,30 +1363,34 @@ inline auto leidenAffectedVerticesDeltaScreeningOmpW(vector<B>& vertices, vector
  * @param q initial community each vertex belongs to
  * @param qvtot initial total edge weight of each vertex
  * @param qctot initial total edge weight of each community
+ * @param qcdwt initial change in total edge weight of each community
  * @param o leiden options
  * @returns leiden result
  */
 template <bool TRACK=false, class G, class K, class V, class W>
-inline auto leidenDynamicDeltaScreeningOmp(const G& y, const vector<tuple<K, K, V>>& deletions, const vector<tuple<K, K, V>>& insertions, const vector<K>& q, const vector<W>& qvtot, const vector<W>& qctot, const LeidenOptions& o={}) {
+inline auto leidenDynamicDeltaScreeningOmp(const G& y, const vector<tuple<K, K, V>>& deletions, const vector<tuple<K, K, V>>& insertions, const vector<K>& q, const vector<W>& qvtot, const vector<W>& qctot, const vector<W>& qcdwt, const LeidenOptions& o={}) {
   using  B = char;
   size_t S = y.span();
   double R = o.resolution;
+  double Q = o.refinementTolerance;
   double M = edgeWeightOmp(y)/2;
   int    T = omp_get_max_threads();
   vector<B> vertices(S), neighbors(S), communities(S);
   vector2d<K> qs;
-  vector2d<W> qvtots, qctots;
-  leidenSetupInitialsW(qs, qvtots, qctots, q, qvtot, qctot, o.repeat);
+  vector2d<W> qvtots, qctots, qcdwts;
+  leidenSetupInitialsW(qs, qvtots, qctots, qcdwts, q, qvtot, qctot, qcdwt, o.repeat);
   int  r  = 0;
-  auto fi = [&](auto& vcom, auto& vtot, auto& ctot) {
+  auto fi = [&](auto& vcom, auto& vtot, auto& ctot, auto& cdwt) {
     vcom = move(qs[r]);
     vtot = move(qvtots[r]);
-    ctot = move(qctots[r]); ++r;
-    leidenUpdateWeightsFromOmpU(vtot, ctot, y, deletions, insertions, vcom);
+    ctot = move(qctots[r]);
+    cdwt = move(qcdwts[r]); ++r;
+    leidenUpdateWeightsFromOmpU(vtot, ctot, cdwt, y, deletions, insertions, vcom);
   };
-  auto fm = [&](auto& vaff, auto& cchg, auto& vcs, auto& vcout, const auto& vcom, const auto& vtot, const auto& ctot) {
-    leidenAffectedVerticesDeltaScreeningOmpW(vertices, neighbors, communities, cchg, vcs, vcout, y, deletions, insertions, vcom, vtot, ctot, M, R);
+  auto fm = [&](auto& vaff, auto& cchg, auto& cdwt, auto& vcs, auto& vcout, const auto& vcom, const auto& vtot, const auto& ctot) {
+    size_t CCHG = leidenAffectedVerticesDeltaScreeningOmpW(vertices, neighbors, communities, cchg, cdwt, vcs, vcout, y, deletions, insertions, vcom, vtot, ctot, M, Q, R);
     copyValuesOmpW(vaff, vertices);
+    return CCHG;
   };
   auto fa = [&](auto u) { return vertices[u] == B(1); };
   return leidenInvokeOmp<true, TRACK>(y, o, fi, fm, fa);
@@ -1326,32 +1405,48 @@ inline auto leidenDynamicDeltaScreeningOmp(const G& y, const vector<tuple<K, K, 
  * Find the vertices which should be processed upon a batch of edge insertions and deletions.
  * @param vertices vertex affected flags (output)
  * @param cchg community changed flags (updated)
+ * @param cdwt change in total edge weight of each community (updated)
  * @param y updated graph
  * @param deletions edge deletions for this batch update (undirected)
  * @param insertions edge insertions for this batch update (undirected)
  * @param vcom community each vertex belongs to
- * @returns flags for each vertex marking whether it is affected
+ * @param ctot total edge weight of each community
+ * @param Q refinement tolerance
+ * @returns number of communities marked as changed
  */
-template <class B, class G, class K, class V>
-inline void leidenAffectedVerticesFrontierOmpW(vector<B>& vertices, vector<B>& cchg, const G& y, const vector<tuple<K, K, V>>& deletions, const vector<tuple<K, K, V>>& insertions, const vector<K>& vcom) {
+template <class B, class G, class K, class V, class W>
+inline size_t leidenAffectedVerticesFrontierOmpW(vector<B>& vertices, vector<B>& cchg, vector<W>& cdwt, const G& y, const vector<tuple<K, K, V>>& deletions, const vector<tuple<K, K, V>>& insertions, const vector<K>& vcom, const vector<W>& ctot, double Q) {
   fillValueOmpU(vertices, B());
   size_t D = deletions.size();
   size_t I = insertions.size();
-  #pragma omp parallel for schedule(auto)
+  size_t CCHG = 0;
+  #pragma omp parallel for schedule(auto) reduction(+:CCHG)
   for (size_t i=0; i<D; ++i) {
     K u = get<0>(deletions[i]);
     K v = get<1>(deletions[i]);
     if (vcom[u] != vcom[v]) continue;
     vertices[u]  = 1;
-    cchg[vcom[u]] = 1;
+    K c = vcom[u];
+    if (cdwt[c] / ctot[c] < Q) continue;
+    cchg[c] = B(1);
+    cdwt[c] = W();
+    ++CCHG;
   }
-  #pragma omp parallel for schedule(auto)
+  #pragma omp parallel for schedule(auto) reduction(+:CCHG)
   for (size_t i=0; i<I; ++i) {
     K u = get<0>(insertions[i]);
     K v = get<1>(insertions[i]);
-    if (vcom[u] == vcom[v]) { cchg[vcom[u]] = 1; continue; }
+    if (vcom[u] == vcom[v]) {
+      K c = vcom[u];
+      if (cdwt[c] / ctot[c] < Q) continue;
+      cchg[c] = B(1);
+      cdwt[c] = W();
+      ++CCHG;
+      continue;
+    }
     vertices[u]  = 1;
   }
+  return CCHG;
 }
 
 
@@ -1363,23 +1458,26 @@ inline void leidenAffectedVerticesFrontierOmpW(vector<B>& vertices, vector<B>& c
  * @param q initial community each vertex belongs to
  * @param qvtot initial total edge weight of each vertex
  * @param qctot initial total edge weight of each community
+ * @param qcdwt initial change in total edge weight of each community
  * @param o leiden options
  * @returns leiden result
  */
 template <bool TRACK=false, class G, class K, class V, class W>
-inline auto leidenDynamicFrontierOmp(const G& y, const vector<tuple<K, K, V>>& deletions, const vector<tuple<K, K, V>>& insertions, const vector<K>& q, const vector<W>& qvtot, const vector<W>& qctot, const LeidenOptions& o={}) {
+inline auto leidenDynamicFrontierOmp(const G& y, const vector<tuple<K, K, V>>& deletions, const vector<tuple<K, K, V>>& insertions, const vector<K>& q, const vector<W>& qvtot, const vector<W>& qctot, const vector<W>& qcdwt, const LeidenOptions& o={}) {
   vector2d<K> qs;
-  vector2d<W> qvtots, qctots;
-  leidenSetupInitialsW(qs, qvtots, qctots, q, qvtot, qctot, o.repeat);
+  vector2d<W> qvtots, qctots, qcdwts;
+  leidenSetupInitialsW(qs, qvtots, qctots, qcdwts, q, qvtot, qctot, qcdwt, o.repeat);
   int  r  = 0;
-  auto fi = [&](auto& vcom, auto& vtot, auto& ctot) {
+  auto fi = [&](auto& vcom, auto& vtot, auto& ctot, auto& cdwt) {
     vcom = move(qs[r]);
     vtot = move(qvtots[r]);
-    ctot = move(qctots[r]); ++r;
-    leidenUpdateWeightsFromOmpU(vtot, ctot, y, deletions, insertions, vcom);
+    ctot = move(qctots[r]);
+    cdwt = move(qcdwts[r]); ++r;
+    leidenUpdateWeightsFromOmpU(vtot, ctot, cdwt, y, deletions, insertions, vcom);
   };
-  auto fm = [&](auto& vaff, auto& cchg, auto& vcs, auto& vcout, const auto& vcom, const auto& vtot, const auto& ctot) {
-    leidenAffectedVerticesFrontierOmpW(vaff, cchg, y, deletions, insertions, vcom);
+  auto fm = [&](auto& vaff, auto& cchg, auto& cdwt, auto& vcs, auto& vcout, const auto& vcom, const auto& vtot, const auto& ctot) {
+    size_t CCHG = leidenAffectedVerticesFrontierOmpW(vaff, cchg, cdwt, y, deletions, insertions, vcom, ctot, o.refinementTolerance);
+    return CCHG;
   };
   constexpr int CHUNK_SIZE = 32;
   auto fa = [ ](auto u) { return true; };

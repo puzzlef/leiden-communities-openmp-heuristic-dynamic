@@ -83,6 +83,25 @@ inline float refinementTime(const LeidenResult<K, W>& a) {
   return a.refinementTime;
 }
 
+/**
+ * Get the splitting time of an algorithm result.
+ * @param a louvain result
+ * @returns splitting time
+ */
+template <class K, class W>
+inline float splittingTime(const LouvainResult<K, W>& a) {
+  return 0;
+}
+
+/**
+ * Get the splitting time of an algorithm result.
+ * @param a leiden result
+ * @returns splitting time
+ */
+template <class K, class W>
+inline float splittingTime(const LeidenResult<K, W>& a) {
+  return a.splittingTime;
+}
 
 /**
  * Get the tracking time of an algorithm result.
@@ -205,9 +224,9 @@ void runExperiment(const G& x) {
   auto glog = [&](const auto& ans, const char *technique, int numThreads, const auto& y, auto M, auto deletionsf, auto insertionsf) {
     printf(
       "{-%.3e/+%.3e batchf, %03d threads} -> "
-      "{%09.1fms, %09.1fms mark, %09.1fms init, %09.1fms firstpass, %09.1fms locmove, %09.1fms refine, %09.1fms aggr, %09.1fms track, %.3e aff, %04d iters, %03d passes, %01.9f modularity, %zu/%zu disconnected} %s\n",
+      "{%09.1fms, %09.1fms mark, %09.1fms init, %09.1fms firstpass, %09.1fms locmove, %09.1fms split, %09.1fms refine, %09.1fms aggr, %09.1fms track, %.3e aff, %04d iters, %03d passes, %01.9f modularity, %zu/%zu disconnected} %s\n",
       double(deletionsf), double(insertionsf), numThreads,
-      ans.time, ans.markingTime, ans.initializationTime, ans.firstPassTime, ans.localMoveTime, refinementTime(ans), ans.aggregationTime, trackingTime(ans),
+      ans.time, ans.markingTime, ans.initializationTime, ans.firstPassTime, ans.localMoveTime, splittingTime(ans), refinementTime(ans), ans.aggregationTime, trackingTime(ans),
       double(ans.affectedVertices), ans.iterations, ans.passes, getModularity(y, ans, M),
       countValue(communitiesDisconnectedOmp(y, ans.membership), char(1)),
       communities(y, ans.membership).size(), technique
@@ -218,13 +237,14 @@ void runExperiment(const G& x) {
   glog(c0, "leidenStaticOmpOriginal", MAX_THREADS, x, M, 0.0, 0.0);
   #if BATCH_LENGTH>1
   vector<K> C2, C3, C4;
-  vector<W> VW, CW;
+  vector<W> VW, CW, DW;
   #else
   const auto& C2 = c0.membership;
   const auto& C3 = c0.membership;
   const auto& C4 = c0.membership;
   const auto& VW = c0.vertexWeight;
   const auto& CW = c0.communityWeight;
+  const auto& DW = c0.communityWeightChanged;
   #endif
   // Get community memberships on updated graph (dynamic).
   runBatches(x, rnd, [&](const auto& y, auto deletionsf, const auto& deletions, auto insertionsf, const auto& insertions, int sequence, int epoch) {
@@ -236,6 +256,7 @@ void runExperiment(const G& x) {
       C4 = c0.membership;
       VW = c0.vertexWeight;
       CW = c0.communityWeight;
+      DW = c0.communityWeightChanged;
     }
     #endif
     // Adjust number of threads.
@@ -250,29 +271,29 @@ void runExperiment(const G& x) {
       }
       // Find naive-dynamic Louvain.
       {
-        auto c2 = leidenNaiveDynamicOmp(y, deletions, insertions, C2, VW, CW, {repeat});
+        auto c2 = leidenNaiveDynamicOmp(y, deletions, insertions, C2, VW, CW, DW, {repeat});
         flog(c2, "leidenNaiveDynamicOmp");
       }
       {
-        auto c2 = leidenNaiveDynamicOmp<true>(y, deletions, insertions, C2, VW, CW, {repeat});
+        auto c2 = leidenNaiveDynamicOmp<true>(y, deletions, insertions, C2, VW, CW, DW, {repeat});
         flog(c2, "leidenNaiveDynamicOmpTrack");
       }
       // Find delta-screening based dynamic Louvain.
       {
-        auto c3 = leidenDynamicDeltaScreeningOmp(y, deletions, insertions, C3, VW, CW, {repeat});
+        auto c3 = leidenDynamicDeltaScreeningOmp(y, deletions, insertions, C3, VW, CW, DW, {repeat});
         flog(c3, "leidenDynamicDeltaScreeningOmp");
       }
       {
-        auto c3 = leidenDynamicDeltaScreeningOmp<true>(y, deletions, insertions, C3, VW, CW, {repeat});
+        auto c3 = leidenDynamicDeltaScreeningOmp<true>(y, deletions, insertions, C3, VW, CW, DW, {repeat});
         flog(c3, "leidenDynamicDeltaScreeningOmpTrack");
       }
       // Find frontier based dynamic Louvain.
       {
-        auto c4 = leidenDynamicFrontierOmp(y, deletions, insertions, C4, VW, CW, {repeat});
+        auto c4 = leidenDynamicFrontierOmp(y, deletions, insertions, C4, VW, CW, DW, {repeat});
         flog(c4, "leidenDynamicFrontierOmp");
       }
       {
-        auto c4 = leidenDynamicFrontierOmp<true>(y, deletions, insertions, C4, VW, CW, {repeat});
+        auto c4 = leidenDynamicFrontierOmp<true>(y, deletions, insertions, C4, VW, CW, DW, {repeat});
         flog(c4, "leidenDynamicFrontierOmpTrack");
       }
       #if BATCH_LENGTH>1
@@ -281,6 +302,7 @@ void runExperiment(const G& x) {
       C4 = c4.membership;
       VW = c1.vertexWeight;
       CW = c1.communityWeight;
+      DW = c1.communityWeightChanged;
       #endif
     });
   });
