@@ -271,17 +271,17 @@ void runExperiment(const G& x) {
       }
       // Find naive-dynamic Louvain.
       {
-        auto c2 = leidenNaiveDynamicOmp<true>(y, deletions, insertions, C2, VW, CW, DW, {repeat});
+        auto c2 = leidenNaiveDynamicOmp(y, deletions, insertions, C2, VW, CW, DW, {repeat});
         flog(c2, "leidenNaiveDynamicOmpTrack");
       }
       // // Find delta-screening based dynamic Louvain.
       {
-        auto c3 = leidenDynamicDeltaScreeningOmp<true>(y, deletions, insertions, C3, VW, CW, DW, {repeat});
+        auto c3 = leidenDynamicDeltaScreeningOmp(y, deletions, insertions, C3, VW, CW, DW, {repeat});
         flog(c3, "leidenDynamicDeltaScreeningOmpTrack");
       }
       // Find frontier based dynamic Louvain.
       {
-        auto c4 = leidenDynamicFrontierOmp<true>(y, deletions, insertions, C4, VW, CW, DW, {repeat});
+        auto c4 = leidenDynamicFrontierOmp(y, deletions, insertions, C4, VW, CW, DW, {repeat});
         flog(c4, "leidenDynamicFrontierOmpTrack");
       }
       #if BATCH_LENGTH>1
