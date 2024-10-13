@@ -224,10 +224,11 @@ void runExperiment(const G& x) {
   auto glog = [&](const auto& ans, const char *technique, int numThreads, const auto& y, auto M, auto deletionsf, auto insertionsf, double Q=0.6) {
     printf(
       "{-%.3e/+%.3e batchf, %03d threads, %.1f refinetol} -> "
-      "{%09.1fms, %09.1fms mark, %09.1fms init, %09.1fms firstpass, %09.1fms locmove, %09.1fms split, %09.1fms refine, %09.1fms aggr, %09.1fms track, %.3e aff, %04d iters, %03d passes, %01.9f modularity, %zu/%zu disconnected} %s\n",
+      "{%09.1fms, %09.1fms mark, %09.1fms init, %09.1fms firstpass, %09.1fms locmove, %09.1fms split, %09.1fms refine, %09.1fms aggr, %09.1fms track, %.3e aff, %.3e cchg, %.3e cspt, %.3e cnum, %04d iters, %03d passes, %01.9f modularity, %zu/%zu disconnected} %s\n",
       double(deletionsf), double(insertionsf), numThreads, Q,
       ans.time, ans.markingTime, ans.initializationTime, ans.firstPassTime, ans.localMoveTime, splittingTime(ans), refinementTime(ans), ans.aggregationTime, trackingTime(ans),
-      double(ans.affectedVertices), ans.iterations, ans.passes, getModularity(y, ans, M),
+      double(ans.affectedVertices), double(ans.changedCommunities), double(ans.splitCommunities), double(ans.bottomLevelCommunities),
+      ans.iterations, ans.passes, getModularity(y, ans, M),
       countValue(communitiesDisconnectedOmp(y, ans.membership), char(1)),
       communities(y, ans.membership).size(), technique
     );
@@ -264,29 +265,13 @@ void runExperiment(const G& x) {
       auto flog = [&](const auto& ans, const char *technique) {
         glog(ans, technique, numThreads, y, M, deletionsf, insertionsf);
       };
-      // Find static Louvain.
+      // Find delta-screening based dynamic Louvain.
       {
-        auto c1 = leidenStaticOmp(y, {repeat});
-        flog(c1, "leidenStaticOmp");
-      }
-      // Find naive-dynamic Louvain.
-      {
-        auto c2 = leidenNaiveDynamicOmp(y, deletions, insertions, C2, VW, CW, DW, {repeat});
-        flog(c2, "leidenNaiveDynamicOmp");
-        auto d2 = leidenNaiveDynamicOmp<true>(y, deletions, insertions, C2, VW, CW, DW, {repeat});
-        flog(d2, "leidenNaiveDynamicOmpSelsplit");
-      }
-      // // Find delta-screening based dynamic Louvain.
-      {
-        auto c3 = leidenDynamicDeltaScreeningOmp(y, deletions, insertions, C3, VW, CW, DW, {repeat});
-        flog(c3, "leidenDynamicDeltaScreeningOmp");
         auto d3 = leidenDynamicDeltaScreeningOmp<true>(y, deletions, insertions, C3, VW, CW, DW, {repeat});
         flog(d3, "leidenDynamicDeltaScreeningOmpSelsplit");
       }
       // Find frontier based dynamic Louvain.
       {
-        auto c4 = leidenDynamicFrontierOmp(y, deletions, insertions, C4, VW, CW, DW, {repeat});
-        flog(c4, "leidenDynamicFrontierOmp");
         auto d4 = leidenDynamicFrontierOmp<true>(y, deletions, insertions, C4, VW, CW, DW, {repeat});
         flog(d4, "leidenDynamicFrontierOmpSelsplit");
       }
