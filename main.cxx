@@ -123,6 +123,23 @@ template <class K, class W>
 inline float trackingTime(const LeidenResult<K, W>& a) {
   return a.trackingTime;
 }
+
+
+/**
+ * Obtain the fraction of vertices with matching community membership.
+ * @param ucom community membership
+ * @param vcom another community membership
+ * @returns fraction of matching vertices
+ */
+template <class K>
+inline float fractionMatchingOmp(const vector<K>& ucom, const vector<K>& vcom) {
+  size_t S = ucom.size();
+  size_t n = 0;
+  #pragma omp parallel for schedule(auto) reduction(+:n)
+  for (size_t u=0; u<S; ++u)
+    if (ucom[u]==vcom[u]) ++n;
+  return float(n)/S;
+}
 #pragma endregion
 
 
@@ -264,6 +281,13 @@ void runExperiment(const G& x) {
       auto flog = [&](const auto& ans, const char *technique) {
         glog(ans, technique, numThreads, y, M, deletionsf, insertionsf);
       };
+      auto mlog = [&](const auto& ans, const auto& ref, const char *technique) {
+        printf(
+          "{-%.3e/+%.3e batchf, %03d threads} -> {%.3e match} %s\n",
+          double(deletionsf), double(insertionsf), numThreads,
+          fractionMatchingOmp(ref.membership, ans.membership), technique
+        );
+      };
       // Find static Louvain.
       {
         auto c1 = leidenStaticOmp(y, {repeat});
@@ -271,24 +295,21 @@ void runExperiment(const G& x) {
       }
       // Find naive-dynamic Louvain.
       {
-        auto c2 = leidenNaiveDynamicOmp(y, deletions, insertions, C2, VW, CW, DW, {repeat});
-        flog(c2, "leidenNaiveDynamicOmp");
-        auto d2 = leidenNaiveDynamicOmp<true>(y, deletions, insertions, C2, VW, CW, DW, {repeat});
-        flog(d2, "leidenNaiveDynamicOmpSelsplit");
+        auto c2 = leidenNaiveDynamicOmp<true>(y, deletions, insertions, C2, VW, CW, DW, {repeat});
+        auto d2 = leidenNaiveDynamicOmp<true>(x, insertions, deletions, c2.membership, c2.vertexWeight, c2.communityWeight, c2.communityWeightChanged, {repeat});
+        mlog(d2, c0, "leidenNaiveDynamicOmpSelsplit");
       }
       // // Find delta-screening based dynamic Louvain.
       {
-        auto c3 = leidenDynamicDeltaScreeningOmp(y, deletions, insertions, C3, VW, CW, DW, {repeat});
-        flog(c3, "leidenDynamicDeltaScreeningOmp");
-        auto d3 = leidenDynamicDeltaScreeningOmp<true>(y, deletions, insertions, C3, VW, CW, DW, {repeat});
-        flog(d3, "leidenDynamicDeltaScreeningOmpSelsplit");
+        auto c3 = leidenDynamicDeltaScreeningOmp<true>(y, deletions, insertions, C3, VW, CW, DW, {repeat});
+        auto d3 = leidenDynamicDeltaScreeningOmp<true>(x, insertions, deletions, c3.membership, c3.vertexWeight, c3.communityWeight, c3.communityWeightChanged, {repeat});
+        mlog(d3, c0, "leidenDynamicDeltaScreeningOmpSelsplit");
       }
       // Find frontier based dynamic Louvain.
       {
-        auto c4 = leidenDynamicFrontierOmp(y, deletions, insertions, C4, VW, CW, DW, {repeat});
-        flog(c4, "leidenDynamicFrontierOmp");
-        auto d4 = leidenDynamicFrontierOmp<true>(y, deletions, insertions, C4, VW, CW, DW, {repeat});
-        flog(d4, "leidenDynamicFrontierOmpSelsplit");
+        auto c4 = leidenDynamicFrontierOmp<true>(y, deletions, insertions, C4, VW, CW, DW, {repeat});
+        auto d4 = leidenDynamicFrontierOmp<true>(x, insertions, deletions, c4.membership, c4.vertexWeight, c4.communityWeight, c4.communityWeightChanged, {repeat});
+        mlog(d4, c0, "leidenDynamicFrontierOmpSelsplit");
       }
       #if BATCH_LENGTH>1
       C2 = c2.membership;
