@@ -38,7 +38,7 @@ struct LeidenOptions {
   double tolerance;
   /** Tolerance for aggregation [0.8]. */
   double aggregationTolerance;
-  /** Tolerance for refinement [0.5]. */
+  /** Tolerance for refinement [0.6]. */
   double refinementTolerance;
   /** Tolerance drop factor after each pass [10]. */
   double toleranceDrop;
@@ -56,12 +56,12 @@ struct LeidenOptions {
    * @param resolution resolution parameter for modularity [1]
    * @param tolerance tolerance for convergence [1e-2]
    * @param aggregationTolerance tolerance for aggregation [0.8]
-   * @param refinementTolerance tolerance for refinement [0.5]
+   * @param refinementTolerance tolerance for refinement [0.6]
    * @param toleranceDrop tolerance drop factor after each pass [10]
    * @param maxIterations maximum number of iterations per pass [20]
    * @param maxPasses maximum number of passes [10]
    */
-  LeidenOptions(int repeat=1, double resolution=1, double tolerance=1e-2, double aggregationTolerance=1.0, double refinementTolerance=0.5, double toleranceDrop=10, int maxIterations=20, int maxPasses=10) :
+  LeidenOptions(int repeat=1, double resolution=1, double tolerance=1e-2, double aggregationTolerance=1.0, double refinementTolerance=0.6, double toleranceDrop=10, int maxIterations=20, int maxPasses=10) :
   repeat(repeat), resolution(resolution), tolerance(tolerance), aggregationTolerance(aggregationTolerance), refinementTolerance(refinementTolerance), toleranceDrop(toleranceDrop), maxIterations(maxIterations), maxPasses(maxPasses) {}
   #pragma endregion
 };
