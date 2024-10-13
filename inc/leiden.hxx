@@ -997,7 +997,7 @@ inline auto leidenInvokeOmp(const G& x, const LeidenOptions& o, FI fi, FM fm, FA
   vector<B> bufb;           // Buffer for splitting communities
   vector<K> bufc;           // Buffer for obtaining a vertex from each community
   vector<K> ucom, vcom(S);  // Community membership (first pass, current pass)
-  vector<K> udom(S);        // Old community membership (first pass, for tracking communities)
+  vector<K> udom;           // Old community membership (first pass, for tracking communities)
   vector<K> vcob(S);        // Community bound (any pass)
   vector<W> utot, vtot(S);  // Total vertex weights (first pass, current pass)
   vector<W> ctot, dtot;     // Total community weights (any pass)
@@ -1021,6 +1021,7 @@ inline auto leidenInvokeOmp(const G& x, const LeidenOptions& o, FI fi, FM fm, FA
   if ( DYNAMIC) bufb.resize(S);
   if ( DYNAMIC) bufc.resize(S);
   if ( DYNAMIC) dtot.resize(S);
+  if ( DYNAMIC) udom.resize(S);
   if (SELSPLIT) cspt.resize(S);
   leidenAllocateHashtablesW(vcs, vcout, S);
   size_t Z = max(size_t(o.aggregationTolerance * X), X);
@@ -1054,7 +1055,7 @@ inline auto leidenInvokeOmp(const G& x, const LeidenOptions& o, FI fi, FM fm, FA
       // Initialize community membership and total vertex/community weights (initialization phase).
       ti += measureDuration([&]() {
         fi(ucom, utot, ctot, cdwt);
-        copyValuesOmpW(udom, ucom);
+        if (DYNAMIC) copyValuesOmpW(udom, ucom);
       });
       // Mark affected vertices (marking phase).
       tm += measureDuration([&]() {
@@ -1138,7 +1139,7 @@ inline auto leidenInvokeOmp(const G& x, const LeidenOptions& o, FI fi, FM fm, FA
       tp += duration(t0, t1);
       // Track communities by their old IDs (tracking phase).
       tt += measureDuration([&]() {
-        leidenTrackCommunitiesOmpU(ucom, bufc, vtot, vcob, dtot, x, udom, utot);
+        if (DYNAMIC) leidenTrackCommunitiesOmpU(ucom, bufc, vtot, vcob, dtot, x, udom, utot);
       });
     });
   }, o.repeat);
