@@ -271,24 +271,18 @@ void runExperiment(const G& x) {
       }
       // Find naive-dynamic Louvain.
       {
-        auto c2 = leidenNaiveDynamicOmp(y, deletions, insertions, C2, VW, CW, DW, {repeat});
-        flog(c2, "leidenNaiveDynamicOmp");
-        auto d2 = leidenNaiveDynamicOmp<true>(y, deletions, insertions, C2, VW, CW, DW, {repeat});
-        flog(d2, "leidenNaiveDynamicOmpSelsplit");
+        auto c2 = leidenNaiveDynamicOmp<true>(y, deletions, insertions, C2, VW, CW, DW, {repeat});
+        flog(c2, "leidenNaiveDynamicOmpSelsplit");
       }
-      // // Find delta-screening based dynamic Louvain.
+      // Find delta-screening based dynamic Louvain.
       {
-        auto c3 = leidenDynamicDeltaScreeningOmp(y, deletions, insertions, C3, VW, CW, DW, {repeat});
-        flog(c3, "leidenDynamicDeltaScreeningOmp");
-        auto d3 = leidenDynamicDeltaScreeningOmp<true>(y, deletions, insertions, C3, VW, CW, DW, {repeat});
-        flog(d3, "leidenDynamicDeltaScreeningOmpSelsplit");
+        auto c3 = leidenDynamicDeltaScreeningOmp<true>(y, deletions, insertions, C3, VW, CW, DW, {repeat});
+        flog(c3, "leidenDynamicDeltaScreeningOmpSelsplit");
       }
       // Find frontier based dynamic Louvain.
       {
-        auto c4 = leidenDynamicFrontierOmp(y, deletions, insertions, C4, VW, CW, DW, {repeat});
-        flog(c4, "leidenDynamicFrontierOmp");
-        auto d4 = leidenDynamicFrontierOmp<true>(y, deletions, insertions, C4, VW, CW, DW, {repeat});
-        flog(d4, "leidenDynamicFrontierOmpSelsplit");
+        auto c4 = leidenDynamicFrontierOmp<true>(y, deletions, insertions, C4, VW, CW, DW, {repeat});
+        flog(c4, "leidenDynamicFrontierOmpSelsplit");
       }
       #if BATCH_LENGTH>1
       C2 = c2.membership;
