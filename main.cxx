@@ -1,7 +1,6 @@
 #include <cstdint>
 #include <cstdio>
 #include <utility>
-#include <random>
 #include <vector>
 #include <string>
 #include <iostream>
@@ -128,97 +127,22 @@ inline float trackingTime(const LeidenResult<K, W>& a) {
 
 
 
-#pragma region EXPERIMENTAL SETUP
-/**
- * Run a function on each batch update, with a specified range of batch sizes.
- * @param x original graph
- * @param rnd random number generator
- * @param fn function to run on each batch update
- */
-template <class G, class R, class F>
-inline void runBatches(const G& x, R& rnd, F fn) {
-  using  E = typename G::edge_value_type;
-  double d = BATCH_DELETIONS_BEGIN;
-  double i = BATCH_INSERTIONS_BEGIN;
-  for (int epoch=0;; ++epoch) {
-    for (int r=0; r<REPEAT_BATCH; ++r) {
-      auto y  = duplicate(x);
-      for (int sequence=0; sequence<BATCH_LENGTH; ++sequence) {
-        auto deletions  = generateEdgeDeletions (rnd, y, size_t(d * x.size()/2), 1, x.span()-1, true);
-        auto insertions = generateEdgeInsertions(rnd, y, size_t(i * x.size()/2), 1, x.span()-1, true, E(1));
-        tidyBatchUpdateU(deletions, insertions, y);
-        applyBatchUpdateOmpU(y, deletions, insertions);
-        fn(y, d, deletions, i, insertions, sequence, epoch);
-      }
-    }
-    if (d>=BATCH_DELETIONS_END && i>=BATCH_INSERTIONS_END) break;
-    d BATCH_DELETIONS_STEP;
-    i BATCH_INSERTIONS_STEP;
-    d = min(d, double(BATCH_DELETIONS_END));
-    i = min(i, double(BATCH_INSERTIONS_END));
-  }
-}
-
-
-/**
- * Run a function on each number of threads, for a specific epoch.
- * @param epoch epoch number
- * @param fn function to run on each number of threads
- */
-template <class F>
-inline void runThreadsWithBatch(int epoch, F fn) {
-  int t = NUM_THREADS_BEGIN;
-  for (int l=0; l<epoch && t<=NUM_THREADS_END; ++l)
-    t NUM_THREADS_STEP;
-  omp_set_num_threads(t);
-  fn(t);
-  omp_set_num_threads(MAX_THREADS);
-}
-
-
-/**
- * Run a function on each number of threads, with a specified range of thread counts.
- * @param fn function to run on each number of threads
- */
-template <class F>
-inline void runThreadsAll(F fn) {
-  for (int t=NUM_THREADS_BEGIN; t<=NUM_THREADS_END; t NUM_THREADS_STEP) {
-    omp_set_num_threads(t);
-    fn(t);
-    omp_set_num_threads(MAX_THREADS);
-  }
-}
-
-
-/**
- * Run a function on each number of threads, with a specified range of thread counts or for a specific epoch (depending on NUM_THREADS_MODE).
- * @param epoch epoch number
- * @param fn function to run on each number of threads
- */
-template <class F>
-inline void runThreads(int epoch, F fn) {
-  if (NUM_THREADS_MODE=="with-batch") runThreadsWithBatch(epoch, fn);
-  else runThreadsAll(fn);
-}
-#pragma endregion
-
-
-
-
 #pragma region PERFORM EXPERIMENT
 /**
  * Perform the experiment.
- * @param x original graph
+ * @param x input graph
+ * @param fstream input file stream
+ * @param rows number of rows/vetices in the graph
+ * @param size number of lines/edges (temporal) in the graph
+ * @param batchFraction fraction of edges to use in each batch
  */
 template <class G>
-void runExperiment(const G& x) {
+void runExperiment(G& x, istream& fstream, size_t rows, size_t size, double batchFraction) {
   using K = typename G::key_type;
   using V = typename G::edge_value_type;
   using W = LOUVAIN_WEIGHT_TYPE;
-  random_device dev;
-  default_random_engine rnd(dev());
-  int repeat  = REPEAT_METHOD;
-  int retries = 5;
+  int repeat     = REPEAT_METHOD;
+  int numThreads = MAX_THREADS;
   double M = edgeWeightOmp(x)/2;
   // Follow a specific result logging format, which can be easily parsed later.
   auto glog = [&](const auto& ans, const char *technique, int numThreads, const auto& y, auto M, auto deletionsf, auto insertionsf, double Q=0.6) {
@@ -232,68 +156,64 @@ void runExperiment(const G& x) {
       communities(y, ans.membership).size(), technique
     );
   };
+  vector<tuple<K, K, V>> deletions;
+  vector<tuple<K, K, V>> insertions;
   // Get community memberships on original graph (static).
   auto c0 = leidenStaticOmp(x, {5});
   glog(c0, "leidenStaticOmpOriginal", MAX_THREADS, x, M, 0.0, 0.0);
-  #if BATCH_LENGTH>1
-  vector<K> C2, C3, C4;
-  vector<W> VW, CW, DW;
-  #else
-  const auto& C2 = c0.membership;
-  const auto& C3 = c0.membership;
-  const auto& C4 = c0.membership;
-  const auto& VW = c0.vertexWeight;
-  const auto& CW = c0.communityWeight;
-  const auto& DW = c0.communityWeightChanged;
-  #endif
+  auto CM2 = c0.membership;
+  auto CV2 = c0.vertexWeight;
+  auto CC2 = c0.communityWeight;
+  auto CD2 = c0.communityWeightChanged;
+  auto CM3 = c0.membership;
+  auto CV3 = c0.vertexWeight;
+  auto CC3 = c0.communityWeight;
+  auto CD3 = c0.communityWeightChanged;
+  auto CM4 = c0.membership;
+  auto CV4 = c0.vertexWeight;
+  auto CC4 = c0.communityWeight;
+  auto CD4 = c0.communityWeightChanged;
   // Get community memberships on updated graph (dynamic).
-  runBatches(x, rnd, [&](const auto& y, auto deletionsf, const auto& deletions, auto insertionsf, const auto& insertions, int sequence, int epoch) {
-    double M = edgeWeightOmp(y)/2;
-    #if BATCH_LENGTH>1
-    if (sequence==0) {
-      C2 = c0.membership;
-      C3 = c0.membership;
-      C4 = c0.membership;
-      VW = c0.vertexWeight;
-      CW = c0.communityWeight;
-      DW = c0.communityWeightChanged;
-    }
-    #endif
-    // Adjust number of threads.
-    runThreads(epoch, [&](int numThreads) {
-      auto flog = [&](const auto& ans, const char *technique) {
-        glog(ans, technique, numThreads, y, M, deletionsf, insertionsf);
-      };
-      // Find static Louvain.
-      {
-        auto c1 = leidenStaticOmp(y, {repeat});
-        flog(c1, "leidenStaticOmp");
-      }
-      // Find naive-dynamic Louvain.
-      {
-        auto c2 = leidenNaiveDynamicOmp<true>(y, deletions, insertions, C2, VW, CW, DW, {repeat});
-        flog(c2, "leidenNaiveDynamicOmpSelsplit");
-      }
-      // Find delta-screening based dynamic Louvain.
-      {
-        auto c3 = leidenDynamicDeltaScreeningOmp<true>(y, deletions, insertions, C3, VW, CW, DW, {repeat});
-        flog(c3, "leidenDynamicDeltaScreeningOmpSelsplit");
-      }
-      // Find frontier based dynamic Louvain.
-      {
-        auto c4 = leidenDynamicFrontierOmp<true>(y, deletions, insertions, C4, VW, CW, DW, {repeat});
-        flog(c4, "leidenDynamicFrontierOmpSelsplit");
-      }
-      #if BATCH_LENGTH>1
-      C2 = c2.membership;
-      C3 = c3.membership;
-      C4 = c4.membership;
-      VW = c1.vertexWeight;
-      CW = c1.communityWeight;
-      DW = c1.communityWeightChanged;
-      #endif
-    });
-  });
+  for (int batchIndex=0; batchIndex<BATCH_LENGTH; ++batchIndex) {
+    auto y = duplicate(x);
+    insertions.clear();
+    auto fb = [&](auto u, auto v, auto w) {
+      insertions.push_back({u, v, w});
+    };
+    readTemporalDo(fstream, false, true, rows, size_t(batchFraction * size), fb);
+    tidyBatchUpdateU(deletions, insertions, y);
+    applyBatchUpdateOmpU(y, deletions, insertions);
+    LOG(""); print(y); printf(" (insertions=%zu)\n", insertions.size());
+    double  M = edgeWeightOmp(y)/2;
+    auto flog = [&](const auto& ans, const char *technique) {
+      glog(ans, technique, numThreads, y, M, 0.0, batchFraction);
+    };
+    // Find static Leiden.
+    auto c1 = leidenStaticOmp(y, {repeat});
+    flog(c1, "leidenStaticOmp");
+    // Find naive-dynamic Leiden.
+    auto c2 = leidenNaiveDynamicOmp<true>(y, deletions, insertions, CM2, CV2, CC2, CD2, {repeat});
+    flog(c2, "leidenNaiveDynamicOmpSelsplit");
+    // Find delta-screening based dynamic Leiden.
+    auto c3 = leidenDynamicDeltaScreeningOmp<true>(y, deletions, insertions, CM3, CV3, CC3, CD3, {repeat});
+    flog(c3, "leidenDynamicDeltaScreeningOmpSelsplit");
+    // Find frontier based dynamic Leiden.
+    auto c4 = leidenDynamicFrontierOmp<true>(y, deletions, insertions, CM4, CV4, CC4, CD4, {repeat});
+    flog(c4, "leidenDynamicFrontierOmpSelsplit");
+    copyValuesOmpW(CM2, c2.membership);
+    copyValuesOmpW(CV2, c2.vertexWeight);
+    copyValuesOmpW(CC2, c2.communityWeight);
+    copyValuesOmpW(CD2, c2.communityWeightChanged);
+    copyValuesOmpW(CM3, c3.membership);
+    copyValuesOmpW(CV3, c3.vertexWeight);
+    copyValuesOmpW(CC3, c3.communityWeight);
+    copyValuesOmpW(CD3, c3.communityWeightChanged);
+    copyValuesOmpW(CM4, c4.membership);
+    copyValuesOmpW(CV4, c4.vertexWeight);
+    copyValuesOmpW(CC4, c4.communityWeight);
+    copyValuesOmpW(CD4, c4.communityWeightChanged);
+    swap(x, y);
+  }
 }
 
 
@@ -308,15 +228,17 @@ int main(int argc, char **argv) {
   using V = TYPE;
   install_sigsegv();
   char *file     = argv[1];
-  bool symmetric = argc>2? stoi(argv[2]) : false;
-  bool weighted  = argc>3? stoi(argv[3]) : false;
+  size_t rows = strtoull(argv[2], nullptr, 10);
+  size_t size = strtoull(argv[3], nullptr, 10);
+  double batchFraction = strtod(argv[5], nullptr);
   omp_set_num_threads(MAX_THREADS);
   LOG("OMP_NUM_THREADS=%d\n", MAX_THREADS);
   LOG("Loading graph %s ...\n", file);
   DiGraph<K, None, V> x;
-  readMtxOmpW(x, file, weighted); LOG(""); println(x);
-  if (!symmetric) { symmetrizeOmpU(x); LOG(""); print(x); printf(" (symmetrize)\n"); }
-  runExperiment(x);
+  ifstream fstream(file);
+  readTemporalOmpW(x, fstream, false, true, rows, size_t(0.90 * size)); LOG(""); print(x); printf(" (90%%)\n");
+  symmetrizeOmpU(x); LOG(""); print(x); printf(" (symmetrize)\n");
+  runExperiment(x, fstream, rows, size, batchFraction);
   printf("\n");
   return 0;
 }
