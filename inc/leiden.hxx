@@ -973,7 +973,7 @@ inline void leidenTrackCommunitiesOmpU(vector<K>& vcom, vector<K>& cdid, vector<
  * @param fa is vertex allowed to be updated? (u)
  * @returns leiden result
  */
-template <bool DYNAMIC=false, bool TRACK=false, int CHUNK_SIZE=2048, class G, class FI, class FM, class FA>
+template <bool DYNAMIC=false, int CHUNK_SIZE=2048, class G, class FI, class FM, class FA>
 inline auto leidenInvokeOmp(const G& x, const LeidenOptions& o, FI fi, FM fm, FA fa) {
   using  K = typename G::key_type;
   using  W = LEIDEN_WEIGHT_TYPE;
@@ -993,7 +993,8 @@ inline auto leidenInvokeOmp(const G& x, const LeidenOptions& o, FI fi, FM fm, FA
   vector<B> bufb;           // Buffer for splitting communities
   vector<K> bufc;           // Buffer for obtaining a vertex from each community
   vector<K> ucom, vcom(S);  // Community membership (first pass, current pass)
-  vector<K> udom, vcob(S);  // Community bound (any pass)
+  vector<K> udom(S);        // Old community membership (first pass, for tracking communities)
+  vector<K> vcob(S);        // Community bound (any pass)
   vector<W> utot, vtot(S);  // Total vertex weights (first pass, current pass)
   vector<W> ctot, dtot;     // Total community weights (any pass)
   vector<W> cdwt;           // Change in total weight of each community
@@ -1017,7 +1018,6 @@ inline auto leidenInvokeOmp(const G& x, const LeidenOptions& o, FI fi, FM fm, FA
   if ( DYNAMIC) bufb.resize(S);
   if ( DYNAMIC) bufc.resize(S);
   if ( DYNAMIC) dtot.resize(S);
-  if ( TRACK)   udom.resize(S);
   leidenAllocateHashtablesW(vcs, vcout, S);
   size_t Z = max(size_t(o.aggregationTolerance * X), X);
   size_t Y = max(size_t(o.aggregationTolerance * Z), Z);
@@ -1047,12 +1047,12 @@ inline auto leidenInvokeOmp(const G& x, const LeidenOptions& o, FI fi, FM fm, FA
     // Time the algorithm.
     mark([&]() {
       size_t CCHG = 0;
-      // Initialize community membership and total vertex/community weights.
+      // Initialize community membership and total vertex/community weights (initialization phase).
       ti += measureDuration([&]() {
         fi(ucom, utot, ctot, cdwt);
-        if (TRACK) copyValuesOmpW(udom, ucom);
+        copyValuesOmpW(udom, ucom);
       });
-      // Mark affected vertices.
+      // Mark affected vertices (marking phase).
       tm += measureDuration([&]() {
         CCHG = fm(vaff, cchg, cspt, cdwt, vcs, vcout, ucom, utot, ctot);
       });
@@ -1065,17 +1065,19 @@ inline auto leidenInvokeOmp(const G& x, const LeidenOptions& o, FI fi, FM fm, FA
         if (p==1) t1 = timeNow();
         bool isFirst = p==0;
         int m = 0;
+        // Iteratively choose best community for each vertex (local-moving phase).
         tl += measureDuration([&]() {
           auto fb = [&](auto c) { if (DYNAMIC) cspt[c] = B(1); };
           if (isFirst) m += leidenMoveOmpW(ucom, ctot, vaff, vcs, vcout, x, vcob, utot, M, R, L, fc, fa, fb);
           else         m += leidenMoveOmpW(vcom, ctot, vaff, vcs, vcout, y, vcob, vtot, M, R, L, fc);
         });
         size_t CSPT = DYNAMIC && isFirst? countValueOmp(cspt, B(1)) : 0;
-        // Adjust community IDs.
+        // Adjust community IDs for splitting and refinement phases.
         if (DYNAMIC && isFirst && (CSPT || CCHG)) {
           swap(ctot, dtot); swap(ucom, vcob); swap(cchg, vaff); swap(cspt, bufb);
           leidenSubsetRenameCommunitiesOmpW(ucom, ctot, cchg, cspt, bufc, x, vcob, dtot, vaff, bufb);
         }
+        // Split disconnected communities using BFS (splitting phase).
         ts += measureDuration([&]() {
           if (DYNAMIC && isFirst && CSPT) {
             auto fs = [&](auto c) { return cspt[c] && !cchg[c]; };
@@ -1083,6 +1085,7 @@ inline auto leidenInvokeOmp(const G& x, const LeidenOptions& o, FI fi, FM fm, FA
             swap(ucom, vcom);
           }
         });
+        // Refine communities into subcommunities (refinement phase).
         tr += measureDuration([&]() {
           if (!isFirst || !DYNAMIC || CCHG) {
             auto fr = [&](auto u) { return DYNAMIC? cchg[vcob[u]] : B(1); };
@@ -1107,6 +1110,7 @@ inline auto leidenInvokeOmp(const G& x, const LeidenOptions& o, FI fi, FM fm, FA
         else         leidenRenumberCommunitiesOmpW(vcom, cv.degrees, bufk, y);
         if (isFirst) {}
         else         leidenLookupCommunitiesOmpU(ucom, vcom);
+        // Aggregate communities into super-vertices (aggregation phase).
         ta += measureDuration([&]() {
           cv.respan(CN); z.respan(CN);
           if (isFirst) leidenCommunityVerticesOmpW(cv.offsets, cv.degrees, cv.edgeKeys, bufk, x, ucom);
@@ -1128,8 +1132,9 @@ inline auto leidenInvokeOmp(const G& x, const LeidenOptions& o, FI fi, FM fm, FA
       else      leidenLookupCommunitiesOmpU(ucom, vcom);
       if (p<=1) t1 = timeNow();
       tp += duration(t0, t1);
+      // Track communities by their old IDs (tracking phase).
       tt += measureDuration([&]() {
-        if (TRACK) leidenTrackCommunitiesOmpU(ucom, bufc, vtot, vcob, dtot, x, udom, utot);
+        leidenTrackCommunitiesOmpU(ucom, bufc, vtot, vcob, dtot, x, udom, utot);
       });
     });
   }, o.repeat);
@@ -1263,7 +1268,7 @@ inline size_t leidenChangedCommunitiesOmpU(vector<B>& cchg, vector<B>& cspt, vec
  * @param o leiden options
  * @returns leiden result
  */
-template <bool TRACK=false, class G, class K, class V, class W>
+template <class G, class K, class V, class W>
 inline auto leidenNaiveDynamicOmp(const G& y, const vector<tuple<K, K, V>>& deletions, const vector<tuple<K, K, V>>& insertions, const vector<K>& q, const vector<W>& qvtot, const vector<W>& qctot, const vector<W>& qcdwt, const LeidenOptions& o={}) {
   using B = char;
   vector2d<K> qs;
@@ -1283,7 +1288,7 @@ inline auto leidenNaiveDynamicOmp(const G& y, const vector<tuple<K, K, V>>& dele
     return CCHG;
   };
   auto fa = [ ](auto u) { return true; };
-  return leidenInvokeOmp<true, TRACK>(y, o, fi, fm, fa);
+  return leidenInvokeOmp<true>(y, o, fi, fm, fa);
 }
 #pragma endregion
 
@@ -1388,7 +1393,7 @@ inline size_t leidenAffectedVerticesDeltaScreeningOmpW(vector<B>& vertices, vect
  * @param o leiden options
  * @returns leiden result
  */
-template <bool TRACK=false, class G, class K, class V, class W>
+template <class G, class K, class V, class W>
 inline auto leidenDynamicDeltaScreeningOmp(const G& y, const vector<tuple<K, K, V>>& deletions, const vector<tuple<K, K, V>>& insertions, const vector<K>& q, const vector<W>& qvtot, const vector<W>& qctot, const vector<W>& qcdwt, const LeidenOptions& o={}) {
   using  B = char;
   size_t S = y.span();
@@ -1414,7 +1419,7 @@ inline auto leidenDynamicDeltaScreeningOmp(const G& y, const vector<tuple<K, K, 
     return CCHG;
   };
   auto fa = [&](auto u) { return vertices[u] == B(1); };
-  return leidenInvokeOmp<true, TRACK>(y, o, fi, fm, fa);
+  return leidenInvokeOmp<true>(y, o, fi, fm, fa);
 }
 #pragma endregion
 
@@ -1485,7 +1490,7 @@ inline size_t leidenAffectedVerticesFrontierOmpW(vector<B>& vertices, vector<B>&
  * @param o leiden options
  * @returns leiden result
  */
-template <bool TRACK=false, class G, class K, class V, class W>
+template <class G, class K, class V, class W>
 inline auto leidenDynamicFrontierOmp(const G& y, const vector<tuple<K, K, V>>& deletions, const vector<tuple<K, K, V>>& insertions, const vector<K>& q, const vector<W>& qvtot, const vector<W>& qctot, const vector<W>& qcdwt, const LeidenOptions& o={}) {
   vector2d<K> qs;
   vector2d<W> qvtots, qctots, qcdwts;
@@ -1504,7 +1509,7 @@ inline auto leidenDynamicFrontierOmp(const G& y, const vector<tuple<K, K, V>>& d
   };
   constexpr int CHUNK_SIZE = 32;
   auto fa = [ ](auto u) { return true; };
-  return leidenInvokeOmp<true, TRACK, CHUNK_SIZE>(y, o, fi, fm, fa);
+  return leidenInvokeOmp<true, CHUNK_SIZE>(y, o, fi, fm, fa);
 }
 #pragma endregion
 #pragma endregion
